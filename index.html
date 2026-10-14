@@ -1,0 +1,2506 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="description" content="Interactive 3D Aircraft Nose Landing Gear (A320/B737) Digital Twin & Kinematics Simulator built with Three.js" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M12 19l9 2-9-18-9 18 9-2zm0 0v-8'/%3E%3C/svg%3E" />
+  <title>商用客機鼻輪起落架 3D 結構與運動學模擬器 | NLG Digital Twin</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #070b12;
+      color: #e2e8f0;
+      font-family: 'Noto Sans TC', 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    .font-mono-tech {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.35);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(56, 189, 248, 0.65);
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: #1e293b;
+      border-radius: 999px;
+      outline: none;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
+      cursor: pointer;
+      transition: transform 0.12s ease, background-color 0.12s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.18);
+      background: #7dd3fc;
+    }
+    input[type="range"].amber-slider::-webkit-slider-thumb {
+      background: #f59e0b;
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
+    }
+    input[type="range"].emerald-slider::-webkit-slider-thumb {
+      background: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
+    }
+    input[type="range"].purple-slider::-webkit-slider-thumb {
+      background: #a855f7;
+      box-shadow: 0 0 8px rgba(168, 85, 247, 0.7);
+    }
+    .glass-panel {
+      background: rgba(11, 18, 31, 0.84);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.65);
+    }
+    .callout-pin {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+      cursor: pointer;
+      transition: opacity 0.2s ease, transform 0.15s ease;
+      z-index: 15;
+    }
+    .callout-pin:hover {
+      transform: translate(-50%, -50%) scale(1.08);
+      z-index: 25;
+    }
+    .cockpit-light-stripes {
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(239, 68, 68, 0.9),
+        rgba(239, 68, 68, 0.9) 6px,
+        rgba(24, 24, 27, 0.95) 6px,
+        rgba(24, 24, 27, 0.95) 12px
+      );
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+    .animate-pulse-fast {
+      animation: pulseGlow 0.9s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="w-screen h-screen relative select-none">
+
+  <!-- 3D Viewport Container -->
+  <div id="canvas-container" class="w-full h-full absolute inset-0 z-0 cursor-grab active:cursor-grabbing"></div>
+
+  <!-- 3D Floating Callout Labels Container -->
+  <div id="labels-container" class="w-full h-full absolute inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+  <!-- Top Navigation & Cockpit ECAM Telemetry Bar -->
+  <header class="absolute top-0 left-0 right-0 z-20 p-2.5 sm:p-3.5 pointer-events-none flex flex-wrap items-center justify-between gap-2">
+    <!-- Brand & Title -->
+    <div class="glass-panel rounded-xl px-3.5 py-2 pointer-events-auto flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-sky-400 shrink-0">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-sm sm:text-base font-bold tracking-wide text-white">A320 / B737 級鼻輪起落架與機首輪艙 3D 數位孿生</h1>
+          <span class="hidden md:inline-block text-[10px] font-mono-tech uppercase px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30">1:1 SCALE PROPORTION</span>
+        </div>
+        <p class="text-[11px] text-slate-400 hidden sm:block">1:1 窄體客機機首與緊湊輪艙比例・雙輪油氣減震支柱・A型折疊阻力撐桿與過中心鎖・齒條轉向</p>
+      </div>
+    </div>
+
+    <!-- Cockpit ECAM Gear & Hydraulic Telemetry Strip -->
+    <div class="glass-panel rounded-xl px-3 py-1.5 pointer-events-auto flex items-center gap-3 sm:gap-4 flex-wrap">
+      <!-- Cockpit LDG GEAR Indicator Panel -->
+      <div class="flex items-center gap-2 pr-2 sm:pr-3 border-r border-slate-700/80">
+        <div class="text-[10px] font-mono-tech text-slate-400 leading-tight uppercase">
+          <div>LDG GEAR</div>
+          <div id="ecam-state-text" class="text-emerald-400 font-bold">DOWN LOCKED</div>
+        </div>
+        <!-- UNLK Red Indicator -->
+        <div id="ind-unlk" class="w-11 h-7 rounded border border-slate-700 bg-slate-900/90 flex items-center justify-center text-[10px] font-mono-tech font-bold text-slate-600 transition-all duration-200" title="起落架未鎖定/轉換中警告燈">
+          UNLK
+        </div>
+        <!-- DOWN Green Triangle Indicator -->
+        <div id="ind-down" class="w-11 h-7 rounded border border-emerald-500/70 bg-emerald-950/80 shadow-[0_0_12px_rgba(16,185,129,0.45)] flex flex-col items-center justify-center text-[9px] font-mono-tech font-bold text-emerald-400 transition-all duration-200" title="起落架放下並過中心鎖定綠燈">
+          <span>▼</span>
+          <span class="leading-none">LOCK</span>
+        </div>
+      </div>
+
+      <!-- Real-Time Telemetry Metrics -->
+      <div class="hidden lg:flex items-center gap-4 text-xs font-mono-tech">
+        <div>
+          <span class="text-slate-400 text-[10px] block">HYD PRESS (綠系統)</span>
+          <span id="tel-hyd" class="text-sky-300 font-semibold">3,000 PSI</span>
+        </div>
+        <div>
+          <span class="text-slate-400 text-[10px] block">OLEO N₂ 氮氣壓力</span>
+          <span id="tel-n2" class="text-amber-300 font-semibold">14.2 MPa</span>
+        </div>
+        <div>
+          <span class="text-slate-400 text-[10px] block">減震行程 STROKE</span>
+          <span id="tel-stroke" class="text-emerald-300 font-semibold">76 mm (20%)</span>
+        </div>
+        <div>
+          <span class="text-slate-400 text-[10px] block">WOW 輪載感測</span>
+          <span id="tel-wow" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px]">ON GROUND</span>
+        </div>
+      </div>
+
+      <!-- Quick Action Toolbar (Sound, Labels, Mobile Panels) -->
+      <div class="flex items-center gap-1.5">
+        <button id="btn-toggle-labels" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 hover:bg-sky-500/30 transition flex items-center gap-1" title="切換 3D 結構標註標籤">
+          <span>🏷️</span><span class="hidden sm:inline">標註</span>
+        </button>
+        <button id="btn-toggle-xray" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition flex items-center gap-1" title="透視油氣減震支柱內部氮氣室與節流孔">
+          <span>🔍</span><span class="hidden sm:inline">內部剖面</span>
+        </button>
+        <button id="btn-toggle-sound" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition flex items-center gap-1" title="切換液壓與着陸合成音效">
+          <span id="sound-icon">🔊</span><span class="hidden sm:inline">音效</span>
+        </button>
+        <button id="btn-mobile-controls" class="lg:hidden px-2.5 py-1.5 rounded-lg text-xs font-medium bg-sky-600 text-white">
+          控制面板
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Left Panel: Engineering Control & Kinematics Console -->
+  <aside id="left-panel" class="glass-panel rounded-2xl w-80 sm:w-88 max-h-[calc(100vh-5.5rem)] absolute top-16 left-3 z-20 flex flex-col overflow-hidden transition-transform duration-300">
+    <!-- Panel Header -->
+    <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">運動學與液壓操控台 (Kinematics)</h2>
+      </div>
+      <button id="btn-reset-all" class="text-[11px] text-sky-400 hover:text-sky-300 font-medium px-2 py-0.5 rounded bg-sky-500/10 border border-sky-400/20 transition">
+        重置狀態
+      </button>
+    </div>
+
+    <!-- Scrollable Controls Body -->
+    <div class="p-4 space-y-4 overflow-y-auto text-xs">
+
+      <!-- 1. Retraction & Extension Sequence -->
+      <div class="p-3 rounded-xl bg-slate-900/70 border border-slate-800/90 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-white flex items-center gap-1.5">
+            <span class="text-sky-400">01</span> 收放機構與輪艙完整收納
+          </span>
+          <span id="val-retract" class="font-mono-tech text-sky-400 font-bold">放下鎖定 (0%)</span>
+        </div>
+
+        <!-- Big Cockpit Lever Toggle Button -->
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btn-gear-down" class="py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 bg-emerald-600/30 text-emerald-300 border border-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.25)] transition">
+            <span>▼</span> GEAR DOWN (放下)
+          </button>
+          <button id="btn-gear-up" class="py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 bg-slate-800 text-slate-300 border border-slate-700 hover:border-amber-500/50 hover:text-amber-300 transition">
+            <span>▲</span> GEAR UP (收起)
+          </button>
+        </div>
+
+        <!-- Manual Kinematics Scrub Slider -->
+        <div class="space-y-1 pt-1">
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span>手動行程檢視 (連桿/艙門同步)</span>
+            <span id="val-strut-angle" class="font-mono-tech text-slate-300">支柱角: 0.0°</span>
+          </div>
+          <input id="slider-retract" type="range" min="0" max="100" step="0.5" value="0" />
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono-tech">
+            <span>0% 放下鎖定</span>
+            <span>15% 開門解鎖</span>
+            <span>86% 全入艙</span>
+            <span>100% 艙門密合</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Oleo-Pneumatic Shock Strut & Touchdown Simulation -->
+      <div class="p-3 rounded-xl bg-slate-900/70 border border-slate-800/90 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-white flex items-center gap-1.5">
+            <span class="text-amber-400">02</span> 油氣減震支柱 (Oleo Strut)
+          </span>
+          <span id="val-compression" class="font-mono-tech text-amber-400 font-bold">20% (靜載)</span>
+        </div>
+
+        <input id="slider-compression" type="range" class="amber-slider" min="0" max="100" step="0.5" value="20" />
+        <div class="flex justify-between text-[10px] text-slate-500 font-mono-tech">
+          <span>0% 完全伸展 (空中)</span>
+          <span>20% 地面靜載</span>
+          <span>100% 極限壓縮 (380mm)</span>
+        </div>
+
+        <!-- Dynamic Simulation Triggers -->
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button id="btn-touchdown" class="py-1.5 px-2.5 rounded-lg font-semibold text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition flex items-center justify-center gap-1">
+            <span>🛬</span> 模擬着陸衝擊
+          </button>
+          <button id="btn-taxi-bump" class="py-1.5 px-2.5 rounded-lg font-semibold text-[11px] bg-slate-800 text-slate-300 border border-slate-700 hover:border-amber-400/40 transition flex items-center justify-center gap-1">
+            <span>〰️</span> 跑道滑行震動
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. Nose Wheel Steering (NWS) -->
+      <div class="p-3 rounded-xl bg-slate-900/70 border border-slate-800/90 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-white flex items-center gap-1.5">
+            <span class="text-emerald-400">03</span> 液壓鼻輪轉向 (Steering)
+          </span>
+          <span id="val-steering" class="font-mono-tech text-emerald-400 font-bold">0.0° (置中)</span>
+        </div>
+
+        <input id="slider-steering" type="range" class="emerald-slider" min="-75" max="75" step="0.5" value="0" />
+        <div class="flex justify-between text-[10px] text-slate-500 font-mono-tech">
+          <span>-75° 左滿舵 (Tiller)</span>
+          <span>±7° 方向舵踏板</span>
+          <span>+75° 右滿舵</span>
+        </div>
+
+        <div class="flex items-center gap-1.5 pt-0.5">
+          <button id="btn-steer-left" class="flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono-tech text-[11px] border border-slate-700">-45° 左轉</button>
+          <button id="btn-steer-center" class="flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono-tech text-[11px] border border-slate-700">0° 歸零</button>
+          <button id="btn-steer-right" class="flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono-tech text-[11px] border border-slate-700">+45° 右轉</button>
+          <button id="btn-steer-sweep" class="px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 text-[11px] font-medium">自動擺動</button>
+        </div>
+      </div>
+
+      <!-- 4. Wheel Speed, Exploded View & Fuselage Inspection Tools -->
+      <div class="p-3 rounded-xl bg-slate-900/70 border border-slate-800/90 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-white flex items-center gap-1.5">
+            <span class="text-purple-400">04</span> 機輪轉速、機鼻透視與拆解
+          </span>
+          <span id="val-speed" class="font-mono-tech text-purple-300 font-bold">25 kts</span>
+        </div>
+
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span>地面滑行輪速 (Ground Speed)</span>
+            <span id="val-rpm" class="font-mono-tech text-slate-400">210 RPM</span>
+          </div>
+          <input id="slider-speed" type="range" class="purple-slider" min="0" max="160" step="1" value="25" />
+        </div>
+
+        <div class="space-y-1 pt-1">
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span>機械組件爆炸拆解 (Exploded View)</span>
+            <span id="val-explode" class="font-mono-tech text-slate-300">0%</span>
+          </div>
+          <input id="slider-explode" type="range" min="0" max="100" step="1" value="0" />
+        </div>
+
+        <!-- Visual Auxiliaries -->
+        <div class="grid grid-cols-3 gap-1.5 pt-1">
+          <button id="btn-toggle-lights" class="py-1.5 px-2 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition">
+            💡 滑行燈: 開
+          </button>
+          <button id="btn-toggle-forces" class="py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 transition">
+            📐 受力向量
+          </button>
+          <button id="btn-toggle-bay" class="py-1.5 px-2 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition" title="切換客機機鼻蒙皮：單側剖視窗 / 半透明透視 / 實體塗裝 / 僅輪艙">
+            ✈️ 機鼻輪艙
+          </button>
+        </div>
+      </div>
+
+      <!-- 5. Camera Presets -->
+      <div class="space-y-1.5">
+        <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1">快速工程視角切換 (Camera Presets)</div>
+        <div class="grid grid-cols-3 gap-1.5">
+          <button data-cam="iso" class="cam-preset-btn py-1.5 px-2 rounded-lg text-[11px] font-medium bg-sky-500/25 text-sky-300 border border-sky-400/50 transition">全景等角</button>
+          <button data-cam="side" class="cam-preset-btn py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition">側面連桿</button>
+          <button data-cam="torque" class="cam-preset-btn py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition">防扭剪刀臂</button>
+          <button data-cam="lock" class="cam-preset-btn py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition">過中心鎖定</button>
+          <button data-cam="steering" class="cam-preset-btn py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition">轉向致動缸</button>
+          <button data-cam="front" class="cam-preset-btn py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition">機輪與正面</button>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- Right Panel: Interactive Subsystem Inspector & Principle Diagram -->
+  <aside id="right-panel" class="glass-panel rounded-2xl w-80 sm:w-96 max-h-[calc(100vh-5.5rem)] absolute top-16 right-3 z-20 hidden md:flex flex-col overflow-hidden transition-transform duration-300">
+    <!-- Header -->
+    <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+      <div class="flex items-center gap-2">
+        <span class="text-sky-400">⚙️</span>
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">結構拆解與運作原理解析</h2>
+      </div>
+      <span class="text-[10px] font-mono-tech text-slate-400">點擊 3D 模型或下方組件</span>
+    </div>
+
+    <!-- Component Selector Pills -->
+    <div id="part-pills" class="px-3.5 py-2.5 border-b border-slate-800/80 flex flex-wrap gap-1.5 bg-slate-950/40">
+      <button data-part="overview" class="part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-sky-500 text-slate-950 font-semibold transition">系統總覽</button>
+      <button data-part="oleo" class="part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">油氣減震支柱</button>
+      <button data-part="torque" class="part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">防扭剪刀臂</button>
+      <button data-part="drag" class="part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">折疊撐桿與鎖定</button>
+      <button data-part="steering" class="part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">液壓轉向機構</button>
+      <button data-part="actuator" class="part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">收放致動缸</button>
+      <button data-part="wheels" class="part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">雙鼻輪與防濺板</button>
+      <button data-part="doors" class="part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">鼻輪艙與艙門</button>
+    </div>
+
+    <!-- Dynamic Inspector Content -->
+    <div class="p-4 overflow-y-auto space-y-3.5 text-xs leading-relaxed">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <span id="info-tag" class="text-[10px] font-mono-tech uppercase px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">PRIMARY SUBSYSTEM</span>
+          <h3 id="info-title" class="text-base font-bold text-white mt-1">商用客機雙輪鼻輪起落架 (NLG)</h3>
+          <p id="info-subtitle" class="text-[11px] text-slate-400 font-mono-tech">1:1 True-Scale Airbus A320 / Boeing 737 Proportions</p>
+        </div>
+      </div>
+
+      <!-- Live Interactive SVG / Canvas Schematic of Oleo & Stowage -->
+      <div class="rounded-xl bg-slate-950/90 border border-slate-800 p-3">
+        <div class="flex items-center justify-between text-[10px] font-mono-tech text-slate-400 mb-1.5">
+          <span id="schematic-caption">即時輪艙收納剖面與減震狀態圖 (1:1 PROPORTION)</span>
+          <span id="schematic-readout" class="text-sky-400">TRUE SCALE</span>
+        </div>
+        <canvas id="schematic-canvas" width="320" height="115" class="w-full h-[115px] rounded bg-slate-900/60"></canvas>
+      </div>
+
+      <!-- Principle Description -->
+      <div class="space-y-2">
+        <h4 class="text-[11px] font-bold uppercase tracking-wider text-sky-400">運作原理與真實機身比例 (Working Principle)</h4>
+        <p id="info-desc" class="text-slate-300 text-xs leading-relaxed">
+          真實窄體客機（A320 / B737）機身寬度約 3.96m、高度 4.14m，而鼻輪輪胎直徑僅 0.73m（30 吋），因此「鼻輪艙（Nose Wheel Well）」只佔機首底部中央約 28% 的寬度與下方約 27% 的高度（位於駕駛艙地板正下方，上方 73% 為駕駛艙與前客艙空間）。收起時主支柱向前上方旋轉 96°，恰好緊湊收納進駕駛艙地板下的矩形輪艙槽內。
+        </p>
+      </div>
+
+      <!-- Mechanical Load & Force Path -->
+      <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+        <h4 class="text-[11px] font-bold uppercase tracking-wider text-amber-400">力學傳遞與工程規格 (Engineering Specs)</h4>
+        <ul id="info-specs" class="space-y-1.5 text-[11px] text-slate-300">
+          <li class="flex justify-between border-b border-slate-800/80 pb-1">
+            <span class="text-slate-400">機身與輪艙比例：</span>
+            <span class="font-mono-tech text-slate-200">機身寬 3.96m / 輪艙寬僅 1.14m (28.8%)</span>
+          </li>
+          <li class="flex justify-between border-b border-slate-800/80 pb-1">
+            <span class="text-slate-400">輪艙深度與位置：</span>
+            <span class="font-mono-tech text-slate-200">深 1.16m (位於駕駛艙加壓地板正下方)</span>
+          </li>
+          <li class="flex justify-between border-b border-slate-800/80 pb-1">
+            <span class="text-slate-400">鼻輪尺寸與離地高：</span>
+            <span class="font-mono-tech text-slate-200">30×8.8 R15 (Ø0.73m) / 機腹離地 1.55m</span>
+          </li>
+          <li class="flex justify-between">
+            <span class="text-slate-400">艙門氣動外形：</span>
+            <span class="font-mono-tech text-slate-200">四扇貼合機腹雙曲率複合材料艙門</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Bottom Interaction Hint Bar -->
+  <div class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none hidden sm:flex items-center gap-4 px-4 py-1.5 rounded-full glass-panel text-[11px] text-slate-300">
+    <span>🖱️ <b>左鍵拖曳</b>：360° 旋轉視角</span>
+    <span class="text-slate-600">|</span>
+    <span>🖱️ <b>右鍵拖曳</b>：平移畫面</span>
+    <span class="text-slate-600">|</span>
+    <span>⚙️ <b>滾輪</b>：無段縮放細節</span>
+    <span class="text-slate-600">|</span>
+    <span>👆 <b>點擊零件</b>：高亮聚焦與查看原理</span>
+  </div>
+
+  <script>
+    // ============================================================================
+    // 1. COMPONENT KNOWLEDGE BASE (True-Scale A320 / B737 Engineering Data)
+    // ============================================================================
+    const COMPONENT_DATA = {
+      overview: {
+        tag: "1:1 TRUE-SCALE ARCHITECTURE",
+        title: "商用客機雙輪鼻輪起落架與機鼻輪艙 (NLG)",
+        subtitle: "1:1 Scale Airbus A320 / Boeing 737 Forward Fuselage & Nose Gear",
+        desc: "依據真實窄體客機（A320 / B737）1:1 比例建模：機身直徑 3.96m × 高 4.14m，鼻輪採用標準 30×8.8 R15 航空胎（直徑 0.73m），機腹離地淨高約 1.55m。鼻輪艙（Nose Wheel Well）僅佔機腹中央寬度 1.14m（約機身寬的 28.8%）、高度 1.16m（位於駕駛艙地板與電子艙下方，絕不侵佔上方駕駛艙空間）。收起時主支柱繞耳軸向前旋轉 96°，整組起落架緊湊沒入駕駛艙地板下的輪艙內。",
+        specs: [
+          ["機身截面尺寸", "寬 3.96 m × 高 4.14 m (標準雙弧窄體客機截面)"],
+          ["鼻輪艙真實比例", "長 2.85 m × 寬 1.14 m × 深 1.16 m (佔機身寬 28.8%)"],
+          ["鼻輪與離地高度", "輪胎 Ø0.73 m (30吋) / 機腹離地高 1.55 m"],
+          ["收放作動時間", "前收 96° 全收納 (前主艙門採 Pre-Closing 預關閉邏輯)"]
+        ],
+        camPreset: "iso"
+      },
+      oleo: {
+        tag: "SHOCK ABSORPTION",
+        title: "鍛造油氣減震支柱 (Oleo-Pneumatic Shock Strut)",
+        subtitle: "Stepped Forged Outer Cylinder + Chrome Piston + Metering Pin",
+        desc: "外筒採用一體式 300M 高強度鋼模鍛加工，頂部整合橫向耳軸（Trunnion）與收放致動耳座；下方為鏡面硬鉻處理的滑動活塞內筒（Sliding Piston）。內部採用「油氣並聯」原理：著陸瞬間，活塞向上推擠液壓油高速穿過中間隔板的節流孔（Orifice）與錐形計量針（Metering Pin），將 85% 垂直衝擊動能轉化為熱能；上腔高壓氮氣（N₂）則受壓縮作為非線性氣體彈簧。點擊上方「🔍 內部剖面」可直接透視內部液壓油與氮氣腔。",
+        specs: [
+          ["最大壓縮行程", "380 mm (15.0 in)"],
+          ["活塞表面處理", "HVOF 超音速火焰噴塗碳化鎢 / 鏡面硬鉻"],
+          ["緩衝能量效率", "82% ~ 88% (遠高於純金屬彈簧或橡膠減震)"],
+          ["自動定中凸輪", "離地伸展時內部定中凸輪強制將機輪回正至 0°"]
+        ],
+        camPreset: "torque"
+      },
+      torque: {
+        tag: "TORQUE & SHIMMY CONTROL",
+        title: "防扭剪刀臂與減擺器 (Torque Links & Shimmy Damper)",
+        subtitle: "Forged I-Beam Upper/Lower Scissors + Apex Shimmy Damper",
+        desc: "為防止圓柱形減震活塞在主外筒內自由旋轉導致機輪失控，鍛造工字樑結構的「上防扭臂」與「下防扭臂」鉸接於轉向旋轉套筒與下方輪軸叉之間。當減震支柱上下伸縮時，剪刀臂夾角隨之張合；當轉向套筒旋轉時，剪刀臂則剛性傳遞轉向扭力至機輪。中央關節配置液壓減擺阻尼器（Shimmy Damper）與輪載感測器（WOW Proximity Sensor），並設有地面拖車快拆插銷。",
+        specs: [
+          ["運動自由度", "允許垂直減震行程伸縮 / 剛性鎖定偏航旋轉角"],
+          ["頂點附屬裝置", "液壓減擺阻尼器 + 雙通道 WOW 輪載電感感測器"],
+          ["地面拖車模式", "拔除頂點紅色快拆銷即可解放 ±95° 自由拖曳"],
+          ["輪艙收納空間", "收起至 96° 時剪刀臂頂點完全收於後艙門上方"]
+        ],
+        camPreset: "torque"
+      },
+      drag: {
+        tag: "A-FRAME DRAG BRACE & OVER-CENTER LOCK",
+        title: "雙樑 A 型折疊阻力撐桿與過中心鎖 (Drag Brace & Lock Stay)",
+        subtitle: "Twin-Beam A-Frame Drag Strut + Over-Center Jury Strut & Springs",
+        desc: "真實客機鼻輪起落架為承受著陸與地面滑行時的巨大前後水平載荷，採用橫向抗扭的「雙樑 A 型折疊阻力撐桿（A-Frame Drag Brace）」，上端鉸接於輪艙隔框，下端連接主支柱中段。中央折疊關節由紅白雙色的「過中心鎖定連桿（Lock Stay）」與「雙重下拉拉伸彈簧」拉緊：放下時鎖定連桿越過死點 5.2° 抵靠止動塊，地面阻力越大鎖得越死；收起時則由獨立解鎖致動器先頂開死點，讓 A 型撐桿向上對折收入輪艙。",
+        specs: [
+          ["撐桿結構形式", "雙樑 A 型橫向抗扭鍛造撐桿 (A-Frame Drag Strut)"],
+          ["鎖定安全機制", "幾何過中心死點鎖 (Over-Center) + 雙重拉伸彈簧"],
+          ["解鎖控制致動", "獨立液壓解鎖致動器 (Unlock Actuator) 連動上位鎖"],
+          ["狀態感測回饋", "雙近接感測器確認鎖定後點亮駕駛艙 ECAM 綠燈"]
+        ],
+        camPreset: "lock"
+      },
+      steering: {
+        tag: "NOSE WHEEL STEERING (NWS)",
+        title: "雙液壓轉向致動與滑行燈組 (Steering Actuators & Lights)",
+        subtitle: "Push-Pull Hydraulic Rack/Swivel Actuators + Taxi/Takeoff Lamps",
+        desc: "主支柱上半部套有可旋轉的「轉向套筒（Steering Collar）」，由左右對稱的高壓液壓轉向致動缸推拉驅動，並透過外部液壓軟管束連接伺服控制閥。套筒前方支架安裝有高亮度 LED 滑行燈（Taxi Light）與起飛着陸燈（Takeoff Light），燈光光束會隨鼻輪轉向角度同步照亮彎道內側跑道！起落架收起超過 10% 時，轉向自動歸零並切斷液壓與燈光。",
+        specs: [
+          ["手輪轉向範圍", "±75° (駕駛艙側方手輪 Tiller 控制，供小半徑迴轉)"],
+          ["踏板轉向範圍", "±7° (方向舵踏板控制，隨滑跑速度升高線性衰減)"],
+          ["角度回授元件", "RVDT 旋轉可變差動變壓器即時回授 BSCU 電腦"],
+          ["隨動照明系統", "雙燈頭滑行/起飛燈安裝於旋轉套筒，隨轉向擺動"]
+        ],
+        camPreset: "steering"
+      },
+      actuator: {
+        tag: "RETRACTION HYDRAULICS",
+        title: "主收放液壓致動缸 (Retraction Hydraulic Actuator)",
+        subtitle: "3,000 PSI Heavy-Duty Double-Acting Hydraulic Cylinder",
+        desc: "斜向配置於輪艙龍骨頂樑與主支柱耳軸偏心曲柄之間。由於商用客機鼻輪皆採「向前收起（Forward Retraction）」設計：收輪時致動缸伸出/拉動曲柄，使主支柱逆氣流向前上方旋轉 96° 完全沒入前輪艙；若遭遇全機液壓失效，飛行員拉動應急重力放輪手柄釋放上位鎖後，起落架即可藉由自身重量加上迎面氣流吹推，順風自動擺動至放下位置並由彈簧拉入過中心鎖定。",
+        specs: [
+          ["收放運動方向", "向前上方收起 96° (Forward Retraction)"],
+          ["應急放下機制", "重力自由落體 + 氣動風壓輔助順向推入下鎖"],
+          ["行程末端阻尼", "致動缸內建緩衝節流孔，避免收放末端劇烈撞擊"],
+          ["液壓峰值推力", "約 72 kN (足以克服 235 節空速迎面氣動動壓)"]
+        ],
+        camPreset: "side"
+      },
+      wheels: {
+        tag: "TWIN WHEELS & CHINES",
+        title: "雙鼻輪組、鍛造輪轂與導水輪胎 (Twin Wheels & Chined Tires)",
+        subtitle: "Split Forged Aluminum Hubs + 30x8.8 R15 Chined Radial Tires",
+        desc: "雙鼻輪同軸安裝於下方輪軸叉（Axle Fork）的旋轉活軸上，全寬僅 0.76m，輪軸前方設有紅色塗裝的「標準拖車掛接座（Tow Bar Fitting）」，後方則有弧形防濺擋水板。航空輪胎胎壁外側具有突出的「導水折邊（Tire Chine）」，能在積水跑道高速滑跑時將濺起的水幕向兩側橫向導開，防止水柱被吸入後方機翼下的渦扇發動機。當起落架收進輪艙頂部時，胎面會壓靠輪艙頂板的「橡膠止轉摩擦墊（Snubber Pads）」自動煞停。",
+        specs: [
+          ["航空輪胎規格", "30×8.8 R15 輻射層導水輪胎 (外徑 0.73m / 胎寬 0.21m)"],
+          ["鍛造鋁合金輪轂", "兩片式對鎖結構 + 12 顆鈦合金螺栓 + 過熱易熔塞"],
+          ["輪軸前拖車座", "標準航空拖桿插銷座 (含剪力銷過載保護設計)"],
+          ["輪艙止轉煞車", "輪艙頂部雙橡膠摩擦墊 (Retraction Spin-Down Brake)"]
+        ],
+        camPreset: "front"
+      },
+      doors: {
+        tag: "TRUE-SCALE FUSELAGE & BAY DOORS",
+        title: "1:1 比例客機機首、緊湊鼻輪艙與弧形艙門 (Nose Fuselage & Bay)",
+        subtitle: "True-Scale Airliner Forward Fuselage + Compact Under-Cockpit Wheel Well",
+        desc: "依據 A320 / B737 真實結構比例打造：鼻輪艙僅位於駕駛艙加壓地板（Y = +0.56m）正下方的機腹中央槽區，寬度僅 1.14m（不到機身全寬 3.96m 的三分之一），兩側保留完整的機腹圓弧蒙皮與電子設備艙空間。底部四扇艙門完全貼合機腹曲率：前方兩扇「前主艙門」僅在收放轉換期間開啟，全放與全收時皆密合關閉；後方兩扇「後支柱艙門」則環抱支柱，並在收起時完全密合。",
+        specs: [
+          ["機身與輪艙寬度比", "機身寬 3.96m vs 輪艙開口寬 1.14m (僅佔 28.8%)"],
+          ["機身與輪艙高度比", "機身高 4.14m vs 輪艙深 1.16m (位於駕駛艙地板下)"],
+          ["前主艙門邏輯", "收放轉換期開啟 82° / 全收與全放皆密合關閉"],
+          ["機身剖面檢視", "點擊左側「✈️ 機鼻輪艙」可切換：單側剖視窗 / 全實體 / 半透明 / 僅輪艙"]
+        ],
+        camPreset: "iso"
+      }
+    };
+
+    // ============================================================================
+    // 2. SYNTHESIZED SOUND ENGINE (Web Audio API)
+    // ============================================================================
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+        this.hydOsc = null;
+        this.hydGain = null;
+      }
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) this.ctx = new AudioCtx();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+      playLockClunk(isLock = true) {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(isLock ? 155 : 210, now);
+        osc.frequency.exponentialRampToValueAtTime(42, now + 0.14);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.16);
+      }
+      playTouchdownScreech() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const bufferSize = this.ctx.sampleRate * 0.35;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.12));
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1100, now);
+        filter.Q.setValueAtTime(3.5, now);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.34);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start(now);
+
+        const osc = this.ctx.createOscillator();
+        const thumpGain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(95, now);
+        osc.frequency.exponentialRampToValueAtTime(28, now + 0.3);
+        thumpGain.gain.setValueAtTime(0.35, now);
+        thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+        osc.connect(thumpGain);
+        thumpGain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.33);
+      }
+      updateHydraulicHum(isActive) {
+        if (!this.enabled || !this.ctx) {
+          if (this.hydGain && this.ctx) {
+            this.hydGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+          }
+          return;
+        }
+        if (isActive && !this.hydOsc) {
+          this.hydOsc = this.ctx.createOscillator();
+          this.hydGain = this.ctx.createGain();
+          this.hydOsc.type = 'sawtooth';
+          this.hydOsc.frequency.value = 132;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.value = 340;
+          this.hydGain.gain.value = 0.0;
+          this.hydOsc.connect(filter);
+          filter.connect(this.hydGain);
+          this.hydGain.connect(this.ctx.destination);
+          this.hydOsc.start();
+        }
+        if (this.hydGain) {
+          this.hydGain.gain.setTargetAtTime(isActive ? 0.045 : 0.0, this.ctx.currentTime, 0.08);
+        }
+      }
+    }
+    const sound = new SoundEngine();
+
+    // ============================================================================
+    // 3. APPLICATION STATE & KINEMATICS PARAMETERS
+    // ============================================================================
+    const state = {
+      retractProgress: 0.0,      // 0 = fully down & locked, 100 = fully retracted inside nose bay & doors flush closed
+      targetRetract: null,
+      compressionPct: 20.0,      // 0% = fully extended, 20% = static ground weight, 100% = full 380mm stroke
+      steeringDeg: 0.0,          // -75 to +75 deg
+      groundSpeedKts: 25.0,
+      explodePct: 0.0,
+      autoSteerSweep: false,
+      taxiBumpActive: false,
+      touchdownAnimTime: -1,
+      xrayMode: false,
+      showLabels: true,
+      showForces: false,
+      fuselageMode: 'cutaway',   // 'cutaway' (solid airliner with starboard inspection window), 'solid' (100% opaque), 'translucent' (ghosted fuselage), 'hidden' (bay only)
+      lightsOn: true,
+      selectedPart: 'overview',
+      // Computed kinematics outputs
+      strutAngleDeg: 0.0,
+      doorFwdAngleDeg: 0.0,
+      doorAftAngleDeg: 0.0,
+      overCenterDeg: 5.2,
+      isDownLocked: true,
+      isUpLocked: false,
+      wheelRotationRad: 0.0
+    };
+
+    // ============================================================================
+    // 4. THREE.JS SCENE, RENDERER, LIGHTS & CAMERA CONTROLLER
+    // ============================================================================
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b12);
+    scene.fog = new THREE.FogExp2(0x070b12, 0.009);
+
+    const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 240);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.18;
+    container.appendChild(renderer.domElement);
+
+    // Custom Smooth Orbit / Pan / Zoom Controller
+    const camCtrl = {
+      spherical: { radius: 8.8, theta: 1.02, phi: 1.24 },
+      targetSpherical: { radius: 8.8, theta: 1.02, phi: 1.24 },
+      panOffset: new THREE.Vector3(0, -0.45, 0.95),
+      targetPanOffset: new THREE.Vector3(0, -0.45, 0.95),
+      isDragging: false,
+      isPanning: false,
+      prevMouse: { x: 0, y: 0 },
+      downMouse: { x: 0, y: 0 },
+      presets: {
+        iso:      { radius: 8.8,  theta: 1.02,  phi: 1.24, target: [0, -0.45, 0.95] },
+        side:     { radius: 8.2,  theta: 1.57,  phi: 1.30, target: [0, -0.50, 0.95] },
+        torque:   { radius: 3.8,  theta: -0.65, phi: 1.30, target: [0, -1.35, -0.10] },
+        lock:     { radius: 4.2,  theta: 0.98,  phi: 1.20, target: [0, -0.35, 0.65] },
+        steering: { radius: 3.6,  theta: 0.62,  phi: 1.18, target: [0, -0.55, 0.0] },
+        front:    { radius: 6.2,  theta: 0.22,  phi: 1.34, target: [0, -1.15, 0.45] }
+      },
+      setPreset(name) {
+        const p = this.presets[name];
+        if (!p) return;
+        this.targetSpherical.radius = p.radius;
+        this.targetSpherical.theta = p.theta;
+        this.targetSpherical.phi = p.phi;
+        this.targetPanOffset.set(p.target[0], p.target[1], p.target[2]);
+        document.querySelectorAll('.cam-preset-btn').forEach(btn => {
+          const active = btn.getAttribute('data-cam') === name;
+          btn.className = active
+            ? 'cam-preset-btn py-1.5 px-2 rounded-lg text-[11px] font-medium bg-sky-500/25 text-sky-300 border border-sky-400/50 transition'
+            : 'cam-preset-btn py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition';
+        });
+      },
+      update() {
+        const damp = 0.14;
+        this.spherical.radius += (this.targetSpherical.radius - this.spherical.radius) * damp;
+        this.spherical.theta += (this.targetSpherical.theta - this.spherical.theta) * damp;
+        this.spherical.phi += (this.targetSpherical.phi - this.spherical.phi) * damp;
+        this.panOffset.lerp(this.targetPanOffset, damp);
+
+        const r = this.spherical.radius;
+        const sinPhi = Math.sin(this.spherical.phi);
+        const x = r * sinPhi * Math.sin(this.spherical.theta);
+        const y = r * Math.cos(this.spherical.phi);
+        const z = r * sinPhi * Math.cos(this.spherical.theta);
+
+        camera.position.set(x + this.panOffset.x, y + this.panOffset.y, z + this.panOffset.z);
+        camera.lookAt(this.panOffset);
+      }
+    };
+
+    // Lighting Setup (Hangar Studio PBR Lighting)
+    const hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x1e293b, 0.92);
+    scene.add(hemiLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.38);
+    keyLight.position.set(10, 14, 11);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 2048;
+    keyLight.shadow.mapSize.height = 2048;
+    keyLight.shadow.camera.near = 2;
+    keyLight.shadow.camera.far = 34;
+    const d = 7.5;
+    keyLight.shadow.camera.left = -d;
+    keyLight.shadow.camera.right = d;
+    keyLight.shadow.camera.top = d;
+    keyLight.shadow.camera.bottom = -d;
+    keyLight.shadow.bias = -0.0005;
+    scene.add(keyLight);
+
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.72);
+    rimLight.position.set(-11, 5, -9);
+    scene.add(rimLight);
+
+    // Warm internal wheel bay inspection lights
+    const bayLightFwd = new THREE.PointLight(0xfef08a, 1.2, 5.5);
+    bayLightFwd.position.set(0, 0.45, 1.65);
+    scene.add(bayLightFwd);
+
+    const bayLightAft = new THREE.PointLight(0xe0f2fe, 1.0, 5.0);
+    bayLightAft.position.set(0, 0.45, 0.15);
+    scene.add(bayLightAft);
+
+    // ============================================================================
+    // 5. PROCEDURAL TEXTURES & AEROSPACE PBR MATERIALS
+    // ============================================================================
+    function createTireTreadTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#16181d';
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.fillStyle = '#07080a';
+      [115, 208, 304, 397].forEach(gx => {
+        ctx.fillRect(gx - 9, 0, 18, 512);
+      });
+      ctx.strokeStyle = '#22262e';
+      ctx.lineWidth = 2.5;
+      for (let y = 0; y < 512; y += 14) {
+        ctx.beginPath();
+        ctx.moveTo(48, y);
+        ctx.lineTo(464, y);
+        ctx.stroke();
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      return tex;
+    }
+
+    function createRunwayTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#0d131f';
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.11)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i <= 512; i += 64) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.82)';
+      ctx.fillRect(242, 0, 28, 512);
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(242, 0, 28, 512);
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(8, 8);
+      return tex;
+    }
+
+    const runwayTex = createRunwayTexture();
+    const tireTex = createTireTreadTexture();
+
+    const MATS = {
+      fuselageSolid: new THREE.MeshPhysicalMaterial({
+        color: 0xf8fafc, roughness: 0.22, metalness: 0.15, clearcoat: 0.55, side: THREE.DoubleSide
+      }),
+      fuselageBellyGrey: new THREE.MeshPhysicalMaterial({
+        color: 0xcbd5e1, roughness: 0.26, metalness: 0.22, clearcoat: 0.4, side: THREE.DoubleSide
+      }),
+      fuselageGhost: new THREE.MeshPhysicalMaterial({
+        color: 0xe2e8f0, roughness: 0.22, metalness: 0.15,
+        transparent: true, opacity: 0.26, side: THREE.DoubleSide, depthWrite: false
+      }),
+      cutawayWindowPane: new THREE.MeshPhysicalMaterial({
+        color: 0x38bdf8, roughness: 0.15, metalness: 0.1,
+        transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false
+      }),
+      radomeCap: new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0, roughness: 0.30, metalness: 0.10, side: THREE.DoubleSide
+      }),
+      radomeTipRing: new THREE.MeshStandardMaterial({
+        color: 0x334155, roughness: 0.4, metalness: 0.5, side: THREE.DoubleSide
+      }),
+      liveryStripe: new THREE.MeshStandardMaterial({
+        color: 0x0284c7, roughness: 0.25, metalness: 0.35, side: THREE.DoubleSide
+      }),
+      cockpitGlass: new THREE.MeshPhysicalMaterial({
+        color: 0x071120, roughness: 0.06, metalness: 0.30, clearcoat: 0.9, side: THREE.DoubleSide
+      }),
+      windowFrame: new THREE.MeshStandardMaterial({
+        color: 0x1e293b, roughness: 0.4, metalness: 0.7
+      }),
+      // Landing Gear & Wheel Bay Materials
+      strutWhite: new THREE.MeshStandardMaterial({
+        color: 0xf1f5f9, roughness: 0.24, metalness: 0.28, side: THREE.DoubleSide
+      }),
+      strutWhiteXray: new THREE.MeshStandardMaterial({
+        color: 0x94a3b8, roughness: 0.2, metalness: 0.2, transparent: true, opacity: 0.22, depthWrite: false
+      }),
+      chromePiston: new THREE.MeshStandardMaterial({
+        color: 0xffffff, roughness: 0.06, metalness: 0.94
+      }),
+      titaniumGrey: new THREE.MeshStandardMaterial({
+        color: 0x94a3b8, roughness: 0.32, metalness: 0.76
+      }),
+      darkSteel: new THREE.MeshStandardMaterial({
+        color: 0x334155, roughness: 0.38, metalness: 0.80
+      }),
+      primerGreen: new THREE.MeshStandardMaterial({
+        color: 0x4d7c0f, roughness: 0.52, metalness: 0.30, side: THREE.DoubleSide
+      }),
+      bayWallPrimer: new THREE.MeshStandardMaterial({
+        color: 0x365314, roughness: 0.58, metalness: 0.28, side: THREE.DoubleSide
+      }),
+      actuatorGold: new THREE.MeshStandardMaterial({
+        color: 0xd97706, roughness: 0.28, metalness: 0.72
+      }),
+      redLockPaint: new THREE.MeshStandardMaterial({
+        color: 0xdc2626, roughness: 0.32, metalness: 0.25
+      }),
+      tireRubber: new THREE.MeshStandardMaterial({
+        color: 0x1a1c20, map: tireTex, roughness: 0.80, metalness: 0.08
+      }),
+      wheelHub: new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0, roughness: 0.24, metalness: 0.82
+      }),
+      hydraulicHose: new THREE.MeshStandardMaterial({
+        color: 0x1e293b, roughness: 0.55, metalness: 0.35
+      }),
+      n2GasGlow: new THREE.MeshStandardMaterial({
+        color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.6, transparent: true, opacity: 0.68
+      }),
+      hydOilGlow: new THREE.MeshStandardMaterial({
+        color: 0xf59e0b, emissive: 0xd97706, emissiveIntensity: 0.55, transparent: true, opacity: 0.78
+      }),
+      lampLens: new THREE.MeshStandardMaterial({
+        color: 0xffffff, emissive: 0xfef08a, emissiveIntensity: 1.6
+      })
+    };
+
+    const partMeshes = {
+      oleo: [],
+      torque: [],
+      drag: [],
+      steering: [],
+      actuator: [],
+      wheels: [],
+      doors: []
+    };
+
+    function registerMesh(mesh, partId, castShadow = true) {
+      mesh.userData.partId = partId;
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = true;
+      if (partMeshes[partId]) partMeshes[partId].push(mesh);
+      return mesh;
+    }
+
+    function createCrossPin(radius, length, mat = MATS.darkSteel, partId = 'oleo') {
+      const grp = new THREE.Group();
+      const pinGeo = new THREE.CylinderGeometry(radius, radius, length, 20);
+      pinGeo.rotateZ(Math.PI / 2);
+      grp.add(registerMesh(new THREE.Mesh(pinGeo, mat), partId));
+
+      const capGeo = new THREE.CylinderGeometry(radius * 1.45, radius * 1.45, 0.03, 6);
+      capGeo.rotateZ(Math.PI / 2);
+      const capL = registerMesh(new THREE.Mesh(capGeo, MATS.titaniumGrey), partId);
+      capL.position.x = -length / 2 - 0.01;
+      const capR = registerMesh(new THREE.Mesh(capGeo, MATS.titaniumGrey), partId);
+      capR.position.x = length / 2 + 0.01;
+      grp.add(capL, capR);
+      return grp;
+    }
+
+    function createDynamicStrutSegment(r1, r2, mat, partId, hasFlanges = true) {
+      const grp = new THREE.Group();
+      const bodyHolder = new THREE.Group();
+      grp.add(bodyHolder);
+
+      const shaftGeo = new THREE.CylinderGeometry(r1, r2, 1, 20);
+      shaftGeo.rotateX(Math.PI / 2);
+      shaftGeo.translate(0, 0, 0.5);
+      const shaft = registerMesh(new THREE.Mesh(shaftGeo, mat), partId);
+      bodyHolder.add(shaft);
+
+      if (hasFlanges) {
+        const clevisGeo = new THREE.CylinderGeometry(r1 * 1.45, r1 * 1.45, 0.12, 16);
+        clevisGeo.rotateZ(Math.PI / 2);
+        const endA = registerMesh(new THREE.Mesh(clevisGeo, MATS.titaniumGrey), partId);
+        const endB = registerMesh(new THREE.Mesh(clevisGeo, MATS.titaniumGrey), partId);
+        grp.add(endA);
+        grp.userData.endB = endB;
+        grp.add(endB);
+      }
+
+      grp.userData.updateBetween = function(ptA, ptB) {
+        grp.position.copy(ptA);
+        grp.lookAt(ptB);
+        const dist = ptA.distanceTo(ptB);
+        bodyHolder.scale.set(1, 1, Math.max(0.01, dist));
+        if (grp.userData.endB) {
+          grp.userData.endB.position.set(0, 0, dist);
+        }
+      };
+      return grp;
+    }
+
+    function createTwinBeamDragSegment(spreadA, spreadB, radius, mat, partId) {
+      const grp = new THREE.Group();
+      const leftBeam = createDynamicStrutSegment(radius, radius, mat, partId, false);
+      const rightBeam = createDynamicStrutSegment(radius, radius, mat, partId, false);
+      const crossWeb1 = createDynamicStrutSegment(radius * 0.65, radius * 0.65, MATS.titaniumGrey, partId, false);
+      const crossWeb2 = createDynamicStrutSegment(radius * 0.65, radius * 0.65, MATS.titaniumGrey, partId, false);
+      grp.add(leftBeam, rightBeam, crossWeb1, crossWeb2);
+
+      grp.userData.updateBetween = function(ptA, ptB) {
+        const aL = new THREE.Vector3(ptA.x - spreadA, ptA.y, ptA.z);
+        const aR = new THREE.Vector3(ptA.x + spreadA, ptA.y, ptA.z);
+        const bL = new THREE.Vector3(ptB.x - spreadB, ptB.y, ptB.z);
+        const bR = new THREE.Vector3(ptB.x + spreadB, ptB.y, ptB.z);
+        leftBeam.userData.updateBetween(aL, bL);
+        rightBeam.userData.updateBetween(aR, bR);
+
+        const m1L = new THREE.Vector3().lerpVectors(aL, bL, 0.35);
+        const m1R = new THREE.Vector3().lerpVectors(aR, bR, 0.35);
+        const m2L = new THREE.Vector3().lerpVectors(aL, bL, 0.72);
+        const m2R = new THREE.Vector3().lerpVectors(aR, bR, 0.72);
+        crossWeb1.userData.updateBetween(m1L, m1R);
+        crossWeb2.userData.updateBetween(m2L, m2R);
+      };
+      return grp;
+    }
+
+    // ============================================================================
+    // 6. BUILD 1:1 TRUE-SCALE AIRLINER FORWARD FUSELAGE & COMPACT NOSE WHEEL BAY
+    // ============================================================================
+    const worldRoot = new THREE.Group();
+    scene.add(worldRoot);
+
+    // 6.1 Ground Runway Plane
+    const runwayGroup = new THREE.Group();
+    const runwayGeo = new THREE.PlaneGeometry(48, 48);
+    runwayGeo.rotateX(-Math.PI / 2);
+    const runwayMesh = new THREE.Mesh(runwayGeo, new THREE.MeshStandardMaterial({
+      map: runwayTex, roughness: 0.75, metalness: 0.15
+    }));
+    runwayMesh.receiveShadow = true;
+    runwayGroup.add(runwayMesh);
+    scene.add(runwayGroup);
+
+    // Touchdown Tire Smoke Particles
+    const smokeParticles = [];
+    const smokeGroup = new THREE.Group();
+    scene.add(smokeGroup);
+    const smokeGeo = new THREE.SphereGeometry(0.15, 10, 10);
+    for (let i = 0; i < 24; i++) {
+      const smMat = new THREE.MeshBasicMaterial({ color: 0xe2e8f0, transparent: true, opacity: 0 });
+      const sm = new THREE.Mesh(smokeGeo, smMat);
+      sm.visible = false;
+      smokeGroup.add(sm);
+      smokeParticles.push({ mesh: sm, vx: 0, vy: 0, vz: 0, life: 0 });
+    }
+    function triggerTouchdownSmoke(groundY) {
+      smokeParticles.forEach((p, i) => {
+        const side = (i % 2 === 0 ? -1 : 1) * 0.27;
+        p.mesh.position.set(side + (Math.random() - 0.5) * 0.12, groundY + 0.06, -0.10 + (Math.random() - 0.5) * 0.15);
+        p.vx = (Math.random() - 0.5) * 1.2;
+        p.vy = 0.5 + Math.random() * 0.9;
+        p.vz = -2.0 - Math.random() * 2.2;
+        p.life = 1.0;
+        p.mesh.scale.setScalar(0.5);
+        p.mesh.visible = true;
+      });
+    }
+
+    // ----------------------------------------------------------------------------
+    // 6.2 TRUE-SCALE A320 / B737 FUSELAGE & COMPACT NOSE WHEEL BAY PROPORTIONS
+    //     - Fuselage Full Width: 3.96m (rx = 1.98m), Full Height: 4.14m (Y from -0.60m belly to +3.54m roof)
+    //     - Fuselage Section Length: Z from -5.2m (forward cabin) to +6.9m (nose cone radome tip) = 12.1m!
+    //     - Compact Nose Wheel Well Cutout (tucked under the cockpit floor before nose taper!):
+    //       * Z_bay: from BAY_Z_AFT = -0.60m to BAY_Z_FWD = +2.25m (Length = 2.85m)
+    //       * X_bay: from -0.57m to +0.57m (Width = 1.14m -> only 28.8% of the 3.96m fuselage width!)
+    //       * Y_bay: from belly (-0.60m) to Cockpit Floor Bulkhead BAY_CEIL_Y = +0.56m (Depth = 1.16m -> only 28% of fuselage height!)
+    // ----------------------------------------------------------------------------
+    const BAY_Z_AFT = -0.60;
+    const BAY_Z_MID = 0.72;   // Split between Aft Strut Doors and Forward Main Doors
+    const BAY_Z_FWD = 2.25;
+    const BAY_HALF_W = 0.57;  // Compact 1.14m total width (28.8% of fuselage width!)
+    const BAY_CEIL_Y = 0.56;  // Under-cockpit wheel well ceiling (leaves Y = +0.56m to +3.54m for the cockpit & cabin!)
+
+    function getFuselageProfile(z) {
+      let rx = 1.98;
+      let yTop = 3.54;
+      let yBot = -0.60;
+
+      if (z > 1.6) {
+        const t = Math.min(1, (z - 1.6) / 5.3); // 0 at z=1.6, 1 at z=6.9
+        const widthFactor = Math.pow(Math.max(0, 1 - Math.pow(t, 1.55)), 0.58);
+        rx = 1.98 * widthFactor;
+
+        if (z <= 2.45) {
+          const u = (z - 1.6) / 0.85;
+          yTop = 3.54 - 0.26 * (u * u * (3 - 2 * u));
+        } else if (z <= 4.35) {
+          const u = (z - 2.45) / 1.90;
+          yTop = 3.28 - 1.50 * u;
+        } else {
+          const u = (z - 4.35) / 2.55;
+          yTop = 1.78 - 1.36 * Math.pow(u, 1.42);
+        }
+
+        if (z <= 2.35) {
+          const u = (z - 1.6) / 0.75;
+          yBot = -0.60 + 0.02 * u * u;
+        } else {
+          const u = (z - 2.35) / 4.55;
+          yBot = -0.58 + 1.00 * Math.pow(u, 1.72);
+        }
+      }
+
+      const cy = 0.5 * (yTop + yBot);
+      const ry = Math.max(0.001, 0.5 * (yTop - yBot));
+      return { cy, rx: Math.max(0.001, rx), ry };
+    }
+
+    function evalFuselagePoint(z, alpha) {
+      const { cy, rx, ry } = getFuselageProfile(z);
+      const x = rx * Math.sin(alpha);
+      const y = cy - ry * Math.cos(alpha);
+      return new THREE.Vector3(x, y, z);
+    }
+
+    const ALPHA_HINGE = Math.asin(BAY_HALF_W / 1.98); // 0.292 rad (16.7°); at hinge X = ±0.57m, Y = -0.51m
+
+    function buildFuselagePatchGeometry(zStart, zEnd, zSteps, alphaStart, alphaEnd, alphaSteps) {
+      const positions = [];
+      const uvs = [];
+      const indices = [];
+
+      for (let iz = 0; iz <= zSteps; iz++) {
+        const uz = iz / zSteps;
+        const z = zStart + uz * (zEnd - zStart);
+        for (let ia = 0; ia <= alphaSteps; ia++) {
+          const ua = ia / alphaSteps;
+          const alpha = alphaStart + ua * (alphaEnd - alphaStart);
+          const pt = evalFuselagePoint(z, alpha);
+          positions.push(pt.x, pt.y, pt.z);
+          uvs.push(ua, uz);
+        }
+      }
+
+      const rowLen = alphaSteps + 1;
+      for (let iz = 0; iz < zSteps; iz++) {
+        for (let ia = 0; ia < alphaSteps; ia++) {
+          const a = iz * rowLen + ia;
+          const b = a + 1;
+          const c = (iz + 1) * rowLen + ia;
+          const d = c + 1;
+          indices.push(a, b, d);
+          indices.push(a, d, c);
+        }
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+      return geo;
+    }
+
+    const wheelBayGroup = new THREE.Group();
+    worldRoot.add(wheelBayGroup);
+
+    const fuselageSkinGroup = new THREE.Group();
+    wheelBayGroup.add(fuselageSkinGroup);
+    const fuselagePrimaryMeshes = [];
+    const fuselageBellyMeshes = [];
+    let starboardCutawayWindowMesh = null;
+
+    function addFuselageSkinMesh(geo, type = 'primary') {
+      const mat = type === 'belly' ? MATS.fuselageBellyGrey : MATS.fuselageSolid;
+      const m = registerMesh(new THREE.Mesh(geo, mat), 'doors', false);
+      fuselageSkinGroup.add(m);
+      if (type === 'primary') fuselagePrimaryMeshes.push(m);
+      if (type === 'belly') fuselageBellyMeshes.push(m);
+      return m;
+    }
+
+    // 1. Aft Forward-Cabin Barrel (Z = -5.20 to BAY_Z_AFT = -0.60)
+    addFuselageSkinMesh(buildFuselagePatchGeometry(-5.20, BAY_Z_AFT, 14, -0.95, 0.95, 24), 'belly');
+    addFuselageSkinMesh(buildFuselagePatchGeometry(-5.20, BAY_Z_AFT, 14, 0.95, Math.PI * 2 - 0.95, 44), 'primary');
+
+    // 2. Wheel Bay Section (Z = -0.60 to +2.25):
+    addFuselageSkinMesh(buildFuselagePatchGeometry(BAY_Z_AFT, BAY_Z_FWD, 16, Math.PI, Math.PI * 2 - 0.95, 24), 'primary');
+    addFuselageSkinMesh(buildFuselagePatchGeometry(BAY_Z_AFT, BAY_Z_FWD, 16, Math.PI * 2 - 0.95, Math.PI * 2 - ALPHA_HINGE, 14), 'belly');
+    addFuselageSkinMesh(buildFuselagePatchGeometry(BAY_Z_AFT, BAY_Z_FWD, 16, 0.95, Math.PI, 24), 'primary');
+    starboardCutawayWindowMesh = registerMesh(
+      new THREE.Mesh(buildFuselagePatchGeometry(BAY_Z_AFT, BAY_Z_FWD, 16, ALPHA_HINGE, 0.95, 14), MATS.cutawayWindowPane),
+      'doors', false
+    );
+    fuselageSkinGroup.add(starboardCutawayWindowMesh);
+
+    // 3. Forward Nose Section ahead of Wheel Bay up to Radome Bulkhead (Z = +2.25 to +4.65)
+    addFuselageSkinMesh(buildFuselagePatchGeometry(BAY_Z_FWD, 4.65, 14, -0.95, 0.95, 24), 'belly');
+    addFuselageSkinMesh(buildFuselagePatchGeometry(BAY_Z_FWD, 4.65, 14, 0.95, Math.PI * 2 - 0.95, 44), 'primary');
+
+    // 4. Weather Radar Nose Cone / Radome (Z = +4.65 to +6.90)
+    const radomeMesh = registerMesh(new THREE.Mesh(buildFuselagePatchGeometry(4.65, 6.72, 16, -Math.PI, Math.PI, 48), MATS.radomeCap), 'doors', false);
+    const radomeTipMesh = registerMesh(new THREE.Mesh(buildFuselagePatchGeometry(6.72, 6.90, 6, -Math.PI, Math.PI, 32), MATS.radomeTipRing), 'doors', false);
+    const radomeSeamMesh = registerMesh(new THREE.Mesh(buildFuselagePatchGeometry(4.62, 4.67, 2, -Math.PI, Math.PI, 48), MATS.windowFrame), 'doors', false);
+    radomeSeamMesh.scale.set(1.003, 1.003, 1);
+    fuselageSkinGroup.add(radomeMesh, radomeTipMesh, radomeSeamMesh);
+
+    // 5. Airline Blue Cheatline Livery Stripe along both sides of the fuselage (Z = -5.20 to +4.65)
+    const stripeR = new THREE.Mesh(buildFuselagePatchGeometry(-5.20, 4.65, 30, 1.02, 1.18, 4), MATS.liveryStripe);
+    const stripeL = new THREE.Mesh(buildFuselagePatchGeometry(-5.20, 4.65, 30, Math.PI * 2 - 1.18, Math.PI * 2 - 1.02, 4), MATS.liveryStripe);
+    stripeR.scale.set(1.003, 1.003, 1);
+    stripeL.scale.set(1.003, 1.003, 1);
+    fuselageSkinGroup.add(stripeR, stripeL);
+
+    // 6. Authentic 6-Panel Wrap-Around Cockpit Windshield & Side Windows
+    const wsFrontR = new THREE.Mesh(buildFuselagePatchGeometry(2.50, 4.20, 8, Math.PI - 0.58, Math.PI - 0.03, 10), MATS.cockpitGlass);
+    const wsFrontL = new THREE.Mesh(buildFuselagePatchGeometry(2.50, 4.20, 8, Math.PI + 0.03, Math.PI + 0.58, 10), MATS.cockpitGlass);
+    wsFrontR.position.set(0.01, 0.015, 0.015);
+    wsFrontL.position.set(-0.01, 0.015, 0.015);
+    const wsSideR = new THREE.Mesh(buildFuselagePatchGeometry(1.45, 2.42, 6, Math.PI - 0.92, Math.PI - 0.62, 6), MATS.cockpitGlass);
+    const wsSideL = new THREE.Mesh(buildFuselagePatchGeometry(1.45, 2.42, 6, Math.PI + 0.62, Math.PI + 0.92, 6), MATS.cockpitGlass);
+    wsSideR.position.x = 0.015;
+    wsSideL.position.x = -0.015;
+    fuselageSkinGroup.add(wsFrontR, wsFrontL, wsSideR, wsSideL);
+
+    // 7. Forward Cabin Passenger Windows
+    for (let zw = -4.6; zw <= -1.2; zw += 0.56) {
+      [-1, 1].forEach(side => {
+        const win = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 20).rotateZ(Math.PI / 2), MATS.cockpitGlass);
+        win.scale.set(1, 1.32, 1);
+        win.position.set(side * 1.94, 1.72, zw);
+        win.rotation.z = side * -0.12;
+        fuselageSkinGroup.add(win);
+      });
+    }
+
+    [-1, 1].forEach(side => {
+      const pitot = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.24, 10).rotateX(Math.PI / 2), MATS.chromePiston);
+      pitot.position.set(side * 1.35, 0.45, 3.85);
+      fuselageSkinGroup.add(pitot);
+    });
+
+    // ----------------------------------------------------------------------------
+    // 6.3 COMPACT INTERNAL NOSE WHEEL WELL (Under-Cockpit Recessed Box)
+    //     Z = [-0.60, +2.25] (2.85m long), X = [-0.57, +0.57] (1.14m wide), Y = [-0.51, +0.56] (1.07m wall height)
+    // ----------------------------------------------------------------------------
+    const bayStructureGroup = new THREE.Group();
+    wheelBayGroup.add(bayStructureGroup);
+
+    const bayLen = BAY_Z_FWD - BAY_Z_AFT; // 2.85m
+    const bayCenterZ = 0.5 * (BAY_Z_AFT + BAY_Z_FWD); // +0.825m
+    const hingePtRef = evalFuselagePoint(0.8, ALPHA_HINGE); // x = +0.57m, y = -0.51m
+    const HINGE_Y = hingePtRef.y; // -0.51m
+    const bayWallH = BAY_CEIL_Y - HINGE_Y; // 1.07m
+    const bayWallCenterY = 0.5 * (BAY_CEIL_Y + HINGE_Y); // +0.025m
+
+    // Cockpit Pressure Floor / Wheel Bay Ceiling at Y = +0.56m
+    const bayCeiling = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(BAY_HALF_W * 2 + 0.08, 0.05, bayLen + 0.08), MATS.primerGreen), 'doors');
+    bayCeiling.position.set(0, BAY_CEIL_Y, bayCenterZ);
+    bayStructureGroup.add(bayCeiling);
+
+    // Forward & Aft Wheel Well Pressure Bulkheads (at Z = +2.25m and Z = -0.60m)
+    [BAY_Z_AFT, BAY_Z_FWD].forEach(zBulk => {
+      const bulk = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(BAY_HALF_W * 2, bayWallH, 0.05), MATS.bayWallPrimer), 'doors');
+      bulk.position.set(0, bayWallCenterY, zBulk);
+      bayStructureGroup.add(bulk);
+    });
+
+    // Port (-X) solid bay wall so the wheel well looks like an authentic enclosed green chromate box from the starboard cutaway view!
+    const portBayWall = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.03, bayWallH, bayLen), MATS.bayWallPrimer), 'doors');
+    portBayWall.position.set(-BAY_HALF_W - 0.015, bayWallCenterY, bayCenterZ);
+    bayStructureGroup.add(portBayWall);
+
+    // Left & Right Wheel Bay Side Keel Beams & Structural Frames
+    [-BAY_HALF_W, BAY_HALF_W].forEach(xSide => {
+      const topBeam = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.10, bayLen), MATS.primerGreen), 'doors');
+      topBeam.position.set(xSide, BAY_CEIL_Y - 0.05, bayCenterZ);
+      const botBeam = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, bayLen), MATS.primerGreen), 'doors');
+      botBeam.position.set(xSide, HINGE_Y + 0.045, bayCenterZ);
+      bayStructureGroup.add(topBeam, botBeam);
+    });
+
+    for (let z = -0.45; z <= 2.10; z += 0.50) {
+      const roofRib = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(BAY_HALF_W * 2 - 0.04, 0.08, 0.04), MATS.primerGreen), 'doors');
+      roofRib.position.set(0, BAY_CEIL_Y - 0.06, z);
+      bayStructureGroup.add(roofRib);
+
+      [-BAY_HALF_W + 0.02, BAY_HALF_W - 0.02].forEach(xSide => {
+        const vertStiffener = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.04, bayWallH, 0.04), MATS.primerGreen), 'doors');
+        vertStiffener.position.set(xSide, bayWallCenterY, z);
+        bayStructureGroup.add(vertStiffener);
+      });
+    }
+
+    // ----------------------------------------------------------------------------
+    // 6.4 FOUR CONTOURED BAY DOORS (Matching the 1.14m-wide Belly Opening)
+    // ----------------------------------------------------------------------------
+    function createContouredBayDoor(zStart, zEnd, isRightSide) {
+      const hingeX = isRightSide ? BAY_HALF_W : -BAY_HALF_W;
+      const zCenter = 0.5 * (zStart + zEnd);
+      const pivotGroup = new THREE.Group();
+      pivotGroup.position.set(hingeX, HINGE_Y, zCenter);
+
+      const a0 = isRightSide ? 0.006 : -ALPHA_HINGE;
+      const a1 = isRightSide ? ALPHA_HINGE : -0.006;
+      const outerGeo = buildFuselagePatchGeometry(zStart, zEnd, 8, a0, a1, 12);
+      outerGeo.translate(-hingeX, -HINGE_Y, -zCenter);
+      const outerMesh = registerMesh(new THREE.Mesh(outerGeo, MATS.fuselageBellyGrey), 'doors');
+      pivotGroup.add(outerMesh);
+
+      const innerGeo = buildFuselagePatchGeometry(zStart + 0.04, zEnd - 0.04, 6, a0 * 0.92, a1 * 0.92, 8);
+      innerGeo.translate(-hingeX, -HINGE_Y + 0.024, -zCenter);
+      const innerMesh = registerMesh(new THREE.Mesh(innerGeo, MATS.primerGreen), 'doors');
+      pivotGroup.add(innerMesh);
+
+      const doorLen = zEnd - zStart;
+      [-doorLen * 0.34, 0, doorLen * 0.34].forEach(dz => {
+        const gooseneck = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.04), MATS.titaniumGrey), 'doors');
+        gooseneck.position.set(isRightSide ? -0.045 : 0.045, 0.02, dz);
+        pivotGroup.add(gooseneck);
+      });
+
+      return pivotGroup;
+    }
+
+    const doorFwdL = createContouredBayDoor(BAY_Z_MID, BAY_Z_FWD, false);
+    const doorFwdR = createContouredBayDoor(BAY_Z_MID, BAY_Z_FWD, true);
+    const doorAftL = createContouredBayDoor(BAY_Z_AFT, BAY_Z_MID, false);
+    const doorAftR = createContouredBayDoor(BAY_Z_AFT, BAY_Z_MID, true);
+
+    wheelBayGroup.add(doorFwdL, doorFwdR, doorAftL, doorAftR);
+
+    // ----------------------------------------------------------------------------
+    // 6.5 TRUE-SCALE TRUNNION BRACKETS, DRAG PIN & ACTUATOR PIN INSIDE COMPACT BAY
+    // ----------------------------------------------------------------------------
+    const TRUNNION_PIVOT = new THREE.Vector3(0, -0.04, -0.12);
+    const FUSELAGE_DRAG_PIN = new THREE.Vector3(0, -0.08, 1.08);
+    const FUSELAGE_ACTUATOR_PIN = new THREE.Vector3(0, 0.34, 0.78);
+
+    [-0.44, 0.44].forEach(xPos => {
+      const brk = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.62, 0.26), MATS.titaniumGrey), 'doors');
+      brk.position.set(xPos, 0.25, TRUNNION_PIVOT.z);
+      bayStructureGroup.add(brk);
+
+      const journal = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.13, 24).rotateZ(Math.PI / 2), MATS.darkSteel), 'doors');
+      journal.position.set(xPos, TRUNNION_PIVOT.y, TRUNNION_PIVOT.z);
+      bayStructureGroup.add(journal);
+    });
+
+    [-0.32, 0.32].forEach(xPos => {
+      const dBrk = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.64, 0.22), MATS.titaniumGrey), 'drag');
+      dBrk.position.set(xPos, 0.24, FUSELAGE_DRAG_PIN.z);
+      bayStructureGroup.add(dBrk);
+    });
+    const dragFuselagePinMesh = createCrossPin(0.042, 0.74, MATS.darkSteel, 'drag');
+    dragFuselagePinMesh.position.copy(FUSELAGE_DRAG_PIN);
+    bayStructureGroup.add(dragFuselagePinMesh);
+
+    const actBrk = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.26, 0.20), MATS.titaniumGrey), 'actuator');
+    actBrk.position.set(0, 0.43, FUSELAGE_ACTUATOR_PIN.z);
+    bayStructureGroup.add(actBrk);
+    const actFuselagePinMesh = createCrossPin(0.038, 0.26, MATS.darkSteel, 'actuator');
+    actFuselagePinMesh.position.copy(FUSELAGE_ACTUATOR_PIN);
+    bayStructureGroup.add(actFuselagePinMesh);
+
+    [-0.27, 0.27].forEach(xWheel => {
+      const pad = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.05, 0.38), MATS.tireRubber), 'wheels');
+      pad.position.set(xWheel, BAY_CEIL_Y - 0.04, 1.69);
+      bayStructureGroup.add(pad);
+    });
+
+    // ----------------------------------------------------------------------------
+    // 6.6 TRUE-SCALE FORGED MAIN SHOCK STRUT
+    // ----------------------------------------------------------------------------
+    const mainStrutGroup = new THREE.Group();
+    mainStrutGroup.position.copy(TRUNNION_PIVOT);
+    worldRoot.add(mainStrutGroup);
+
+    const outerCylinderSubgroup = new THREE.Group();
+    mainStrutGroup.add(outerCylinderSubgroup);
+
+    const trunnionBar = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.96, 24).rotateZ(Math.PI / 2), MATS.strutWhite), 'oleo');
+    outerCylinderSubgroup.add(trunnionBar);
+
+    [-0.29, 0.29].forEach(xOff => {
+      const arm = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.068, 0.46, 16), MATS.strutWhite), 'oleo');
+      arm.position.set(xOff * 0.62, -0.17, 0);
+      arm.rotation.z = xOff > 0 ? -0.46 : 0.46;
+      outerCylinderSubgroup.add(arm);
+    });
+
+    const outerBarrelMeshes = [];
+    const strutProfilePts = [
+      new THREE.Vector2(0.00,  0.14),
+      new THREE.Vector2(0.11,  0.14),
+      new THREE.Vector2(0.142, 0.09),
+      new THREE.Vector2(0.142, -0.24),
+      new THREE.Vector2(0.162, -0.26),
+      new THREE.Vector2(0.162, -0.44),
+      new THREE.Vector2(0.138, -0.47),
+      new THREE.Vector2(0.138, -0.72),
+      new THREE.Vector2(0.150, -0.75),
+      new THREE.Vector2(0.150, -1.18),
+      new THREE.Vector2(0.166, -1.20),
+      new THREE.Vector2(0.166, -1.28),
+      new THREE.Vector2(0.112, -1.30)
+    ];
+    const forgedBarrelGeo = new THREE.LatheGeometry(strutProfilePts, 32);
+    const upperBarrelMesh = registerMesh(new THREE.Mesh(forgedBarrelGeo, MATS.strutWhite), 'oleo');
+    outerCylinderSubgroup.add(upperBarrelMesh);
+    outerBarrelMeshes.push(upperBarrelMesh);
+
+    const topCap = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.115, 0.06, 24), MATS.titaniumGrey), 'oleo');
+    topCap.position.set(0, 0.16, 0);
+    outerCylinderSubgroup.add(topCap);
+
+    [-0.13, 0.13].forEach(xLug => {
+      const dLug = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.13, 0.18), MATS.strutWhite), 'drag');
+      dLug.position.set(xLug, -0.76, 0.09);
+      outerCylinderSubgroup.add(dLug);
+    });
+    const strutDragPinMesh = createCrossPin(0.034, 0.34, MATS.darkSteel, 'drag');
+    strutDragPinMesh.position.set(0, -0.76, 0.15);
+    outerCylinderSubgroup.add(strutDragPinMesh);
+
+    [-0.07, 0.07].forEach(xLug => {
+      const aLug = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.16), MATS.strutWhite), 'actuator');
+      aLug.position.set(xLug, -0.32, -0.09);
+      outerCylinderSubgroup.add(aLug);
+    });
+
+    [-0.15, 0.15].forEach(xSide => {
+      const hoseCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(xSide * 1.35, 0.04, -0.04),
+        new THREE.Vector3(xSide, -0.25, -0.09),
+        new THREE.Vector3(xSide * 1.06, -0.54, -0.04),
+        new THREE.Vector3(xSide * 1.12, -0.80, 0.06)
+      ]);
+      const hoseGeo = new THREE.TubeGeometry(hoseCurve, 20, 0.013, 8, false);
+      outerCylinderSubgroup.add(registerMesh(new THREE.Mesh(hoseGeo, MATS.hydraulicHose), 'oleo', false));
+    });
+
+    // --- X-RAY INTERNAL OLEO-PNEUMATIC CHAMBERS ---
+    const internalCutawayGroup = new THREE.Group();
+    internalCutawayGroup.visible = false;
+    outerCylinderSubgroup.add(internalCutawayGroup);
+
+    const n2ChamberGeo = new THREE.CylinderGeometry(0.105, 0.105, 0.62, 24);
+    n2ChamberGeo.translate(0, -0.31, 0);
+    const n2ChamberMesh = new THREE.Mesh(n2ChamberGeo, MATS.n2GasGlow);
+    n2ChamberMesh.position.set(0, 0.08, 0);
+    internalCutawayGroup.add(n2ChamberMesh);
+
+    const orificePlate = new THREE.Mesh(new THREE.CylinderGeometry(0.118, 0.118, 0.04, 24), MATS.darkSteel);
+    orificePlate.position.set(0, -0.64, 0);
+    internalCutawayGroup.add(orificePlate);
+
+    const oilChamberGeo = new THREE.CylinderGeometry(0.102, 0.102, 0.60, 24);
+    oilChamberGeo.translate(0, -0.30, 0);
+    const oilChamberMesh = new THREE.Mesh(oilChamberGeo, MATS.hydOilGlow);
+    oilChamberMesh.position.set(0, -0.66, 0);
+    internalCutawayGroup.add(oilChamberMesh);
+
+    // ----------------------------------------------------------------------------
+    // 6.7 STEERING COLLAR, PUSH-PULL HYDRAULIC STEERING ACTUATORS & TAXI LIGHTS
+    // ----------------------------------------------------------------------------
+    const steeringAssemblyGroup = new THREE.Group();
+    mainStrutGroup.add(steeringAssemblyGroup);
+
+    const steerManifold = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.16, 0.25), MATS.titaniumGrey), 'steering');
+    steerManifold.position.set(0, -0.58, 0.08);
+    steeringAssemblyGroup.add(steerManifold);
+
+    [-1, 1].forEach(side => {
+      const cylGrp = new THREE.Group();
+      cylGrp.position.set(side * 0.20, -0.58, 0.06);
+      cylGrp.rotation.y = side * 0.20;
+      const body = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.044, 0.34, 20).rotateX(Math.PI / 2), MATS.actuatorGold), 'steering');
+      const rod = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.46, 16).rotateX(Math.PI / 2), MATS.chromePiston), 'steering');
+      cylGrp.add(body, rod);
+      steeringAssemblyGroup.add(cylGrp);
+    });
+
+    const rotatingCollarGroup = new THREE.Group();
+    steeringAssemblyGroup.add(rotatingCollarGroup);
+
+    const collarSleeve = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.168, 0.168, 0.38, 28), MATS.strutWhite), 'steering');
+    collarSleeve.position.set(0, -0.92, 0);
+    rotatingCollarGroup.add(collarSleeve);
+
+    [-0.74, -1.10].forEach(yFlange => {
+      const fl = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.188, 0.188, 0.035, 28), MATS.titaniumGrey), 'steering');
+      fl.position.set(0, yFlange, 0);
+      rotatingCollarGroup.add(fl);
+    });
+
+    const lampBracket = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.12), MATS.darkSteel), 'steering');
+    lampBracket.position.set(0, -0.92, 0.18);
+    rotatingCollarGroup.add(lampBracket);
+
+    const spotLights = [];
+    [-0.095, 0.095].forEach(xLamp => {
+      const housing = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.044, 0.10, 20).rotateX(Math.PI / 2), MATS.titaniumGrey), 'steering');
+      housing.position.set(xLamp, -0.92, 0.23);
+      const lens = registerMesh(new THREE.Mesh(new THREE.CircleGeometry(0.048, 20), MATS.lampLens), 'steering');
+      lens.position.set(xLamp, -0.92, 0.282);
+      rotatingCollarGroup.add(housing, lens);
+
+      const sp = new THREE.SpotLight(0xfef9c3, 1.4, 18, Math.PI / 5, 0.45, 1.2);
+      sp.position.set(xLamp, -0.92, 0.30);
+      const spTarget = new THREE.Object3D();
+      spTarget.position.set(xLamp * 2, -2.5, 8.5);
+      rotatingCollarGroup.add(sp);
+      rotatingCollarGroup.add(spTarget);
+      sp.target = spTarget;
+      spotLights.push(sp);
+    });
+
+    const UPPER_TORQUE_PIN_LOCAL = new THREE.Vector3(0, -1.08, -0.18);
+    [-0.055, 0.055].forEach(xLug => {
+      const lug = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.10, 0.16), MATS.strutWhite), 'torque');
+      lug.position.set(xLug, UPPER_TORQUE_PIN_LOCAL.y, -0.11);
+      rotatingCollarGroup.add(lug);
+    });
+    const upperTorquePinMesh = createCrossPin(0.028, 0.16, MATS.darkSteel, 'torque');
+    upperTorquePinMesh.position.copy(UPPER_TORQUE_PIN_LOCAL);
+    rotatingCollarGroup.add(upperTorquePinMesh);
+
+    // ----------------------------------------------------------------------------
+    // 6.8 SLIDING PISTON, AXLE FORK & TRUE-SCALE 30x8.8 R15 TWIN WHEELS
+    // ----------------------------------------------------------------------------
+    const pistonAssemblyGroup = new THREE.Group();
+    rotatingCollarGroup.add(pistonAssemblyGroup);
+
+    const chromeRodMesh = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 1.05, 32), MATS.chromePiston), 'oleo');
+    chromeRodMesh.position.set(0, -1.32, 0);
+    pistonAssemblyGroup.add(chromeRodMesh);
+
+    const meteringPinMesh = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.55, 20), MATS.actuatorGold);
+    meteringPinMesh.position.set(0, -0.68, 0);
+    pistonAssemblyGroup.add(meteringPinMesh);
+
+    const AXLE_BASE_Y = -1.82;
+    const axleForkGroup = new THREE.Group();
+    axleForkGroup.position.set(0, AXLE_BASE_Y, 0);
+    pistonAssemblyGroup.add(axleForkGroup);
+
+    const forkCrown = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.18, 24), MATS.strutWhite), 'oleo');
+    forkCrown.position.set(0, 0.08, 0);
+    axleForkGroup.add(forkCrown);
+
+    const towLug = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.085, 0.16), MATS.redLockPaint), 'oleo');
+    towLug.position.set(0, 0.03, 0.13);
+    axleForkGroup.add(towLug);
+
+    const LOWER_TORQUE_PIN_OFFSET_FROM_FORK = new THREE.Vector3(0, 0.11, -0.18);
+    [-0.055, 0.055].forEach(xLug => {
+      const lug = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.10, 0.16), MATS.strutWhite), 'torque');
+      lug.position.set(xLug, 0.11, -0.11);
+      axleForkGroup.add(lug);
+    });
+    const lowerTorquePinMesh = createCrossPin(0.028, 0.16, MATS.darkSteel, 'torque');
+    lowerTorquePinMesh.position.copy(LOWER_TORQUE_PIN_OFFSET_FROM_FORK);
+    axleForkGroup.add(lowerTorquePinMesh);
+
+    const wheelAxleGroup = new THREE.Group();
+    axleForkGroup.add(wheelAxleGroup);
+
+    const axleShaft = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.74, 24).rotateZ(Math.PI / 2), MATS.titaniumGrey), 'wheels');
+    wheelAxleGroup.add(axleShaft);
+
+    const sprayGuard = registerMesh(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.40, 0.40, 0.36, 24, 1, true, -Math.PI * 0.34, Math.PI * 0.68).rotateZ(Math.PI / 2),
+      MATS.darkSteel
+    ), 'wheels');
+    sprayGuard.rotation.x = -0.48;
+    wheelAxleGroup.add(sprayGuard);
+
+    const TIRE_RADIUS = 0.365;
+    const wheelSpinGroup = new THREE.Group();
+    wheelAxleGroup.add(wheelSpinGroup);
+
+    function createAircraftWheel(xSign) {
+      const wGrp = new THREE.Group();
+      wGrp.position.set(xSign * 0.27, 0, 0);
+
+      const pts = [
+        new THREE.Vector2(0.185, -0.090),
+        new THREE.Vector2(0.275, -0.108),
+        new THREE.Vector2(0.330, -0.100),
+        new THREE.Vector2(0.358, -0.068),
+        new THREE.Vector2(0.365, 0.0),
+        new THREE.Vector2(0.358, 0.068),
+        new THREE.Vector2(0.330, 0.100),
+        new THREE.Vector2(0.290, 0.116),
+        new THREE.Vector2(0.268, 0.106),
+        new THREE.Vector2(0.185, 0.090)
+      ];
+      const tireLathe = new THREE.LatheGeometry(pts, 40);
+      tireLathe.rotateZ(xSign > 0 ? -Math.PI / 2 : Math.PI / 2);
+      const tireMesh = registerMesh(new THREE.Mesh(tireLathe, MATS.tireRubber), 'wheels');
+      wGrp.add(tireMesh);
+
+      const hubCyl = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.17, 32).rotateZ(Math.PI / 2), MATS.wheelHub), 'wheels');
+      wGrp.add(hubCyl);
+
+      const dish = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.115, 0.03, 28).rotateZ(Math.PI / 2), MATS.titaniumGrey), 'wheels');
+      dish.position.x = xSign * 0.08;
+      wGrp.add(dish);
+
+      const hubCap = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.04, 20).rotateZ(Math.PI / 2), MATS.darkSteel), 'wheels');
+      hubCap.position.x = xSign * 0.095;
+      wGrp.add(hubCap);
+
+      for (let i = 0; i < 10; i++) {
+        const ang = (i / 10) * Math.PI * 2;
+        const bolt = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.022, 8).rotateZ(Math.PI / 2), MATS.darkSteel), 'wheels');
+        bolt.position.set(xSign * 0.092, Math.cos(ang) * 0.138, Math.sin(ang) * 0.138);
+        wGrp.add(bolt);
+      }
+
+      const valve = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.032, 0.016), MATS.redLockPaint), 'wheels');
+      valve.position.set(xSign * 0.095, 0.17, 0);
+      wGrp.add(valve);
+
+      return wGrp;
+    }
+
+    const leftWheelGrp = createAircraftWheel(-1);
+    const rightWheelGrp = createAircraftWheel(1);
+    wheelSpinGroup.add(leftWheelGrp, rightWheelGrp);
+
+    // ----------------------------------------------------------------------------
+    // 6.9 TORQUE LINKS / SCISSORS MECHANISM
+    // ----------------------------------------------------------------------------
+    const torqueLinksGroup = new THREE.Group();
+    rotatingCollarGroup.add(torqueLinksGroup);
+
+    const TORQUE_LINK_LEN = 0.42;
+
+    function buildForgedTorqueArm(length, isUpper) {
+      const armGrp = new THREE.Group();
+      [-0.032, 0.032].forEach(xOff => {
+        const beam = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.056, length), MATS.strutWhite), 'torque');
+        beam.position.set(xOff, 0, length * 0.5);
+        armGrp.add(beam);
+      });
+      for (let f = 0.25; f <= 0.75; f += 0.25) {
+        const web = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.04, 0.026), MATS.titaniumGrey), 'torque');
+        web.position.set(0, 0, length * f);
+        armGrp.add(web);
+      }
+      if (isUpper) {
+        const damperBody = registerMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.16, 16), MATS.actuatorGold), 'torque');
+        damperBody.position.set(0, 0.042, length * 0.72);
+        armGrp.add(damperBody);
+      } else {
+        const wowSensor = registerMesh(new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.036, 0.06), MATS.darkSteel), 'torque');
+        wowSensor.position.set(0, -0.032, length * 0.64);
+        armGrp.add(wowSensor);
+      }
+      return armGrp;
+    }
+
+    const upperTorqueArm = buildForgedTorqueArm(TORQUE_LINK_LEN, true);
+    const lowerTorqueArm = buildForgedTorqueArm(TORQUE_LINK_LEN, false);
+    const torqueApexPin = createCrossPin(0.028, 0.14, MATS.redLockPaint, 'torque');
+    torqueLinksGroup.add(upperTorqueArm, lowerTorqueArm, torqueApexPin);
+
+    // ----------------------------------------------------------------------------
+    // 6.10 TWIN-BEAM A-FRAME FOLDING DRAG BRACE, OVER-CENTER LOCK STAY & ACTUATOR
+    // ----------------------------------------------------------------------------
+    const kinematicsLinkageGroup = new THREE.Group();
+    worldRoot.add(kinematicsLinkageGroup);
+
+    const lowerDragStrut = createTwinBeamDragSegment(0.13, 0.22, 0.032, MATS.strutWhite, 'drag');
+    const upperDragStrut = createTwinBeamDragSegment(0.22, 0.31, 0.032, MATS.strutWhite, 'drag');
+
+    const lockStayUpper = createDynamicStrutSegment(0.024, 0.024, MATS.redLockPaint, 'drag', true);
+    const lockStayLower = createDynamicStrutSegment(0.024, 0.024, MATS.strutWhite, 'drag', true);
+    const unlockActuator = createDynamicStrutSegment(0.018, 0.014, MATS.actuatorGold, 'drag', false);
+    const downlockSpringL = createDynamicStrutSegment(0.016, 0.016, MATS.darkSteel, 'drag', false);
+
+    const dragKneePin = createCrossPin(0.038, 0.52, MATS.darkSteel, 'drag');
+    const lockKneePin = createCrossPin(0.028, 0.18, MATS.redLockPaint, 'drag');
+
+    kinematicsLinkageGroup.add(
+      lowerDragStrut,
+      upperDragStrut,
+      lockStayUpper,
+      lockStayLower,
+      unlockActuator,
+      downlockSpringL,
+      dragKneePin,
+      lockKneePin
+    );
+
+    const retractCylinder = createDynamicStrutSegment(0.060, 0.060, MATS.actuatorGold, 'actuator', true);
+    const retractPistonRod = createDynamicStrutSegment(0.035, 0.035, MATS.chromePiston, 'actuator', true);
+    kinematicsLinkageGroup.add(retractCylinder, retractPistonRod);
+
+    // ----------------------------------------------------------------------------
+    // 6.11 FORCE & LOAD VECTORS VISUALIZATION
+    // ----------------------------------------------------------------------------
+    const forceVectorsGroup = new THREE.Group();
+    forceVectorsGroup.visible = false;
+    worldRoot.add(forceVectorsGroup);
+
+    function createForceArrow(colorHex, length) {
+      const grp = new THREE.Group();
+      const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, length - 0.20, 16), mat);
+      shaft.position.y = (length - 0.20) / 2;
+      const head = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 20), mat);
+      head.position.y = length - 0.10;
+      grp.add(shaft, head);
+      return grp;
+    }
+
+    const arrowVerticalLoad = createForceArrow(0xf59e0b, 1.05);
+    const arrowDragLoad = createForceArrow(0xef4444, 0.90);
+    arrowDragLoad.rotation.x = -Math.PI / 2;
+    const arrowStrutReaction = createForceArrow(0x38bdf8, 0.85);
+    forceVectorsGroup.add(arrowVerticalLoad, arrowDragLoad, arrowStrutReaction);
+
+    // ============================================================================
+    // 7. 3D FLOATING CALLOUT ANNOTATIONS (HTML OVERLAY PINS)
+    // ============================================================================
+    const CALLOUT_DEFS = [
+      { id: 'oleo',     label: '油氣減震支柱 (Oleo Strut)',        code: 'N₂ + OIL', anchor: new THREE.Vector3(0, -0.65, -0.12) },
+      { id: 'torque',   label: '防扭剪刀臂 (Torque Links)',         code: 'SCISSORS', anchor: new THREE.Vector3(0, -1.42, -0.58) },
+      { id: 'drag',     label: 'A型折疊撐桿與過中心鎖 (Drag Brace)', code: 'LOCK STAY', anchor: new THREE.Vector3(0, -0.42, 0.55) },
+      { id: 'steering', label: '液壓轉向致動器 (Steering)',         code: '±75° NWS', anchor: new THREE.Vector3(0.24, -0.62, 0.08) },
+      { id: 'actuator', label: '主收放致動缸 (Retract Cyl)',        code: '3000 PSI', anchor: new THREE.Vector3(0, 0.08, 0.38) },
+      { id: 'wheels',   label: '雙鼻輪與導水胎 (Twin Wheels)',      code: '30x8.8 R15', anchor: new THREE.Vector3(-0.38, -1.82, 0.22) },
+      { id: 'doors',    label: '緊湊鼻輪艙與弧形艙門 (Nose Bay)',    code: '1:1 SCALE', anchor: new THREE.Vector3(-0.62, -0.55, 1.45) }
+    ];
+
+    const labelsContainer = document.getElementById('labels-container');
+    const calloutElements = {};
+
+    CALLOUT_DEFS.forEach(def => {
+      const el = document.createElement('div');
+      el.className = 'callout-pin flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/85 border border-sky-400/50 text-[11px] text-slate-100 shadow-lg backdrop-blur-md';
+      el.innerHTML = `
+        <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+        <span class="font-medium whitespace-nowrap">${def.label}</span>
+        <span class="text-[9px] font-mono-tech px-1 rounded bg-sky-500/20 text-sky-300">${def.code}</span>
+      `;
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectComponent(def.id, true);
+      });
+      labelsContainer.appendChild(el);
+      calloutElements[def.id] = { el, def };
+    });
+
+    // ============================================================================
+    // 8. EXACT 4-BAR LINKAGE, FULL STOWAGE & OLEO KINEMATICS SOLVER
+    // ============================================================================
+    function solve2DKneeYZ(ay, az, by, bz, L1, L2, preferUpperSign = 1) {
+      const dy = by - ay;
+      const dz = bz - az;
+      const d = Math.hypot(dy, dz);
+      const clampedD = Math.min(Math.max(d, Math.abs(L1 - L2) + 0.001), L1 + L2 - 0.001);
+      const a = (L1 * L1 - L2 * L2 + clampedD * clampedD) / (2 * clampedD);
+      const h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+      const my = ay + (a * dy) / clampedD;
+      const mz = az + (a * dz) / clampedD;
+      const ky = my + preferUpperSign * (h * dz) / clampedD;
+      const kz = mz - preferUpperSign * (h * dy) / clampedD;
+      return new THREE.Vector3(0, ky, kz);
+    }
+
+    function updateKinematicsAndPhysics(dt) {
+      if (state.targetRetract !== null) {
+        const speed = 22.0;
+        const diff = state.targetRetract - state.retractProgress;
+        if (Math.abs(diff) <= speed * dt) {
+          state.retractProgress = state.targetRetract;
+          state.targetRetract = null;
+          sound.updateHydraulicHum(false);
+          sound.playLockClunk(true);
+        } else {
+          state.retractProgress += Math.sign(diff) * speed * dt;
+          sound.updateHydraulicHum(true);
+        }
+        document.getElementById('slider-retract').value = state.retractProgress;
+      } else {
+        sound.updateHydraulicHum(false);
+      }
+
+      const p = state.retractProgress / 100.0;
+
+      let strutNorm = 0;
+      if (p <= 0.10) {
+        strutNorm = 0;
+      } else if (p >= 0.86) {
+        strutNorm = 1;
+      } else {
+        const t = (p - 0.10) / 0.76;
+        strutNorm = t * t * (3 - 2 * t);
+      }
+      state.strutAngleDeg = strutNorm * 96.0;
+      const strutRad = -THREE.MathUtils.degToRad(state.strutAngleDeg);
+
+      let fwdDoorOpenFactor = 0;
+      if (p <= 0.005) {
+        fwdDoorOpenFactor = 0.0;
+      } else if (p < 0.12) {
+        fwdDoorOpenFactor = p / 0.12;
+      } else if (p <= 0.85) {
+        fwdDoorOpenFactor = 1.0;
+      } else {
+        fwdDoorOpenFactor = Math.max(0, 1.0 - (p - 0.85) / 0.15);
+      }
+      state.doorFwdAngleDeg = fwdDoorOpenFactor * 82.0;
+
+      let aftDoorOpenFactor = 1.0;
+      if (p > 0.12) {
+        aftDoorOpenFactor = Math.max(0, 1.0 - (p - 0.12) / 0.84);
+      }
+      state.doorAftAngleDeg = aftDoorOpenFactor * 76.0;
+
+      doorFwdL.rotation.z = -THREE.MathUtils.degToRad(state.doorFwdAngleDeg);
+      doorFwdR.rotation.z = THREE.MathUtils.degToRad(state.doorFwdAngleDeg);
+      doorAftL.rotation.z = -THREE.MathUtils.degToRad(state.doorAftAngleDeg);
+      doorAftR.rotation.z = THREE.MathUtils.degToRad(state.doorAftAngleDeg);
+
+      if (state.touchdownAnimTime >= 0) {
+        state.touchdownAnimTime += dt;
+        const t = state.touchdownAnimTime;
+        if (t < 2.2) {
+          const env = Math.exp(-3.2 * t);
+          const wave = Math.sin(t * 9.5);
+          state.compressionPct = Math.max(0, Math.min(98, 22 + 68 * env * wave));
+          document.getElementById('slider-compression').value = state.compressionPct;
+        } else {
+          state.touchdownAnimTime = -1;
+          state.compressionPct = 20.0;
+          document.getElementById('slider-compression').value = 20.0;
+        }
+      } else if (state.taxiBumpActive && state.retractProgress < 5) {
+        const now = performance.now() * 0.001;
+        state.compressionPct = 22 + Math.sin(now * 11.0) * 6.5 + Math.cos(now * 17.3) * 4.0;
+        document.getElementById('slider-compression').value = state.compressionPct;
+      }
+
+      const effectiveCompressionPct = state.retractProgress > 5
+        ? state.compressionPct * Math.max(0, 1 - (state.retractProgress - 5) / 14)
+        : state.compressionPct;
+
+      if (state.autoSteerSweep && state.retractProgress < 5) {
+        state.steeringDeg = Math.sin(performance.now() * 0.0018) * 60.0;
+        document.getElementById('slider-steering').value = state.steeringDeg;
+      }
+      const effectiveSteeringDeg = state.retractProgress > 5
+        ? state.steeringDeg * Math.max(0, 1 - (state.retractProgress - 5) / 14)
+        : state.steeringDeg;
+
+      const lightsActive = state.lightsOn && state.retractProgress < 25;
+      spotLights.forEach(sp => { sp.visible = lightsActive; });
+      MATS.lampLens.emissiveIntensity = lightsActive ? 1.6 : 0.05;
+
+      mainStrutGroup.rotation.x = strutRad;
+
+      const ex = state.explodePct / 100.0;
+      rotatingCollarGroup.rotation.y = THREE.MathUtils.degToRad(effectiveSteeringDeg);
+      steeringAssemblyGroup.position.set(0, 0, ex * 0.25);
+
+      const maxStrokeMeters = 0.38;
+      const strokeOffset = (effectiveCompressionPct / 100.0) * maxStrokeMeters;
+      pistonAssemblyGroup.position.set(0, strokeOffset - ex * 0.32, 0);
+
+      const n2Scale = Math.max(0.22, 0.92 - (effectiveCompressionPct / 100.0) * 0.55);
+      n2ChamberMesh.scale.set(1, n2Scale, 1);
+      const oilScale = Math.max(0.18, 0.95 - (effectiveCompressionPct / 100.0) * 0.65);
+      oilChamberMesh.scale.set(1, oilScale, 1);
+
+      leftWheelGrp.position.x = -0.27 - ex * 0.38;
+      rightWheelGrp.position.x = 0.27 + ex * 0.38;
+
+      const upperPinLocal = UPPER_TORQUE_PIN_LOCAL.clone();
+      const lowerPinLocal = new THREE.Vector3(0, AXLE_BASE_Y + 0.11 + strokeOffset - ex * 0.32, -0.18);
+      const vertDist = Math.max(0.08, upperPinLocal.y - lowerPinLocal.y);
+      const halfV = vertDist * 0.5;
+      const apexDepth = Math.sqrt(Math.max(0.015, TORQUE_LINK_LEN * TORQUE_LINK_LEN - halfV * halfV));
+      const apexLocal = new THREE.Vector3(0, (upperPinLocal.y + lowerPinLocal.y) * 0.5, -0.18 - apexDepth - ex * 0.25);
+
+      upperTorqueArm.position.copy(upperPinLocal);
+      upperTorqueArm.lookAt(rotatingCollarGroup.localToWorld(apexLocal.clone()));
+      lowerTorqueArm.position.copy(lowerPinLocal);
+      lowerTorqueArm.lookAt(rotatingCollarGroup.localToWorld(apexLocal.clone()));
+      torqueApexPin.position.copy(apexLocal);
+
+      CALLOUT_DEFS[1].anchor.copy(rotatingCollarGroup.localToWorld(apexLocal.clone()));
+
+      const strutDragLugWorld = mainStrutGroup.localToWorld(new THREE.Vector3(0, -0.76, 0.15));
+      const L_DRAG_LOWER = 0.65;
+      const L_DRAG_UPPER = 0.635;
+      const kneeWorld = solve2DKneeYZ(
+        strutDragLugWorld.y, strutDragLugWorld.z,
+        FUSELAGE_DRAG_PIN.y, FUSELAGE_DRAG_PIN.z,
+        L_DRAG_LOWER, L_DRAG_UPPER,
+        1
+      );
+
+      lowerDragStrut.userData.updateBetween(strutDragLugWorld, kneeWorld);
+      upperDragStrut.userData.updateBetween(kneeWorld, FUSELAGE_DRAG_PIN);
+      dragKneePin.position.copy(kneeWorld);
+
+      const strutLockLugWorld = mainStrutGroup.localToWorld(new THREE.Vector3(0, -0.24, 0.12));
+      const lockKneeWorld = solve2DKneeYZ(
+        strutLockLugWorld.y, strutLockLugWorld.z,
+        kneeWorld.y, kneeWorld.z,
+        0.32, 0.32,
+        -1
+      );
+      lockStayUpper.userData.updateBetween(strutLockLugWorld, lockKneeWorld);
+      lockStayLower.userData.updateBetween(lockKneeWorld, kneeWorld);
+      lockKneePin.position.copy(lockKneeWorld);
+
+      const lowerDragMid = new THREE.Vector3().lerpVectors(strutDragLugWorld, kneeWorld, 0.55);
+      unlockActuator.userData.updateBetween(lowerDragMid, lockKneeWorld);
+      downlockSpringL.userData.updateBetween(strutLockLugWorld, kneeWorld);
+
+      const strutActLugWorld = mainStrutGroup.localToWorld(new THREE.Vector3(0, -0.32, -0.15));
+      const actCylinderEnd = new THREE.Vector3().lerpVectors(FUSELAGE_ACTUATOR_PIN, strutActLugWorld, 0.54);
+      retractCylinder.userData.updateBetween(FUSELAGE_ACTUATOR_PIN, actCylinderEnd);
+      retractPistonRod.userData.updateBetween(actCylinderEnd, strutActLugWorld);
+
+      CALLOUT_DEFS[0].anchor.copy(mainStrutGroup.localToWorld(new THREE.Vector3(0, -0.65, 0)));
+      CALLOUT_DEFS[2].anchor.copy(kneeWorld);
+      CALLOUT_DEFS[3].anchor.copy(mainStrutGroup.localToWorld(new THREE.Vector3(0.24, -0.58, 0.16)));
+      CALLOUT_DEFS[4].anchor.copy(actCylinderEnd);
+      const wheelWorldCenter = wheelAxleGroup.getWorldPosition(new THREE.Vector3());
+      CALLOUT_DEFS[5].anchor.copy(wheelWorldCenter.clone().add(new THREE.Vector3(-0.36, 0, 0.18)));
+
+      const groundY = TRUNNION_PIVOT.y + AXLE_BASE_Y + strokeOffset - TIRE_RADIUS;
+      runwayGroup.position.y = groundY;
+
+      let effectiveKts = state.groundSpeedKts;
+      if (state.retractProgress > 65) {
+        effectiveKts = state.groundSpeedKts * Math.max(0, 1 - (state.retractProgress - 65) / 18);
+      }
+      const wheelLinearMps = effectiveKts * 0.5144;
+      const wheelOmega = wheelLinearMps / TIRE_RADIUS;
+      state.wheelRotationRad += wheelOmega * dt;
+      wheelSpinGroup.rotation.x = state.wheelRotationRad;
+
+      if (state.retractProgress < 5 && effectiveKts > 0) {
+        runwayTex.offset.y -= wheelLinearMps * dt * 0.18;
+      }
+
+      if (state.showForces) {
+        forceVectorsGroup.visible = state.retractProgress < 10;
+        forceVectorsGroup.position.set(0, groundY + 0.04, TRUNNION_PIVOT.z);
+        const loadFactor = 0.65 + (effectiveCompressionPct / 100.0) * 1.1;
+        arrowVerticalLoad.scale.set(1, loadFactor, 1);
+        arrowDragLoad.position.set(0, 0.36, 0.28);
+        arrowStrutReaction.position.copy(kneeWorld).sub(forceVectorsGroup.position);
+        arrowStrutReaction.lookAt(FUSELAGE_DRAG_PIN);
+      } else {
+        forceVectorsGroup.visible = false;
+      }
+
+      smokeParticles.forEach(p => {
+        if (p.life > 0) {
+          p.life -= dt * 1.4;
+          if (p.life <= 0) {
+            p.mesh.visible = false;
+          } else {
+            p.mesh.position.x += p.vx * dt;
+            p.mesh.position.y += p.vy * dt;
+            p.mesh.position.z += p.vz * dt;
+            p.mesh.scale.setScalar(0.5 + (1 - p.life) * 1.8);
+            p.mesh.material.opacity = p.life * 0.55;
+          }
+        }
+      });
+
+      state.isDownLocked = state.retractProgress <= 1.0;
+      state.isUpLocked = state.retractProgress >= 99.0;
+      state.overCenterDeg = state.isDownLocked ? 5.2 : Math.max(-68, 5.2 - state.retractProgress * 0.85);
+
+      updateTelemetryUI(effectiveCompressionPct, effectiveSteeringDeg, effectiveKts);
+    }
+
+    // ============================================================================
+    // 9. TELEMETRY UI, COCKPIT INDICATORS & 2D LIVE BAY STOWAGE SCHEMATIC
+    // ============================================================================
+    const ecamStateText = document.getElementById('ecam-state-text');
+    const indUnlk = document.getElementById('ind-unlk');
+    const indDown = document.getElementById('ind-down');
+    const telHyd = document.getElementById('tel-hyd');
+    const telN2 = document.getElementById('tel-n2');
+    const telStroke = document.getElementById('tel-stroke');
+    const telWow = document.getElementById('tel-wow');
+
+    function updateTelemetryUI(compPct, steerDeg, speedKts) {
+      if (state.isDownLocked) {
+        ecamStateText.textContent = 'DOWN LOCKED';
+        ecamStateText.className = 'text-emerald-400 font-bold';
+        indUnlk.className = 'w-11 h-7 rounded border border-slate-700 bg-slate-900/90 flex items-center justify-center text-[10px] font-mono-tech font-bold text-slate-600';
+        indDown.className = 'w-11 h-7 rounded border border-emerald-500/80 bg-emerald-950/90 shadow-[0_0_12px_rgba(16,185,129,0.5)] flex flex-col items-center justify-center text-[9px] font-mono-tech font-bold text-emerald-400';
+      } else if (state.isUpLocked) {
+        ecamStateText.textContent = 'UP & LOCKED (BAY CLOSED)';
+        ecamStateText.className = 'text-sky-400 font-bold';
+        indUnlk.className = 'w-11 h-7 rounded border border-slate-700 bg-slate-900/90 flex items-center justify-center text-[10px] font-mono-tech font-bold text-slate-600';
+        indDown.className = 'w-11 h-7 rounded border border-slate-700 bg-slate-900/90 flex flex-col items-center justify-center text-[9px] font-mono-tech font-bold text-slate-600';
+      } else {
+        ecamStateText.textContent = 'IN TRANSIT (DOORS OPEN)';
+        ecamStateText.className = 'text-red-400 font-bold animate-pulse-fast';
+        indUnlk.className = 'w-11 h-7 rounded border border-red-500 cockpit-light-stripes shadow-[0_0_14px_rgba(239,68,68,0.65)] flex items-center justify-center text-[10px] font-mono-tech font-bold text-white animate-pulse-fast';
+        indDown.className = 'w-11 h-7 rounded border border-slate-700 bg-slate-900/90 flex flex-col items-center justify-center text-[9px] font-mono-tech font-bold text-slate-600';
+      }
+
+      const n2MPa = 11.5 * Math.pow(1 / (1 - 0.62 * (compPct / 100.0)), 1.35);
+      const strokeMm = Math.round((compPct / 100.0) * 380);
+      const hydPsi = state.targetRetract !== null ? 2940 : 3000;
+
+      telHyd.textContent = `${hydPsi.toLocaleString()} PSI`;
+      telN2.textContent = `${n2MPa.toFixed(1)} MPa`;
+      telStroke.textContent = `${strokeMm} mm (${Math.round(compPct)}%)`;
+
+      const onGround = state.retractProgress < 2 && compPct > 4;
+      telWow.textContent = onGround ? 'ON GROUND' : 'AIRBORNE';
+      telWow.className = onGround
+        ? 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px]'
+        : 'px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[10px]';
+
+      const retEl = document.getElementById('val-retract');
+      if (state.isDownLocked) retEl.textContent = '放下鎖定 (0%)';
+      else if (state.isUpLocked) retEl.textContent = '完整入艙密合 (100%)';
+      else retEl.textContent = `收放轉換中 (${Math.round(state.retractProgress)}%)`;
+
+      document.getElementById('val-strut-angle').textContent = `支柱角: ${state.strutAngleDeg.toFixed(1)}°`;
+      document.getElementById('val-compression').textContent = `${Math.round(compPct)}% (${strokeMm}mm)`;
+      document.getElementById('val-steering').textContent = `${steerDeg > 0 ? '+' : ''}${steerDeg.toFixed(1)}°`;
+      document.getElementById('val-speed').textContent = `${Math.round(speedKts)} kts`;
+      document.getElementById('val-rpm').textContent = `${Math.round(speedKts * 8.4)} RPM`;
+      document.getElementById('val-explode').textContent = `${Math.round(state.explodePct)}%`;
+
+      drawLiveSchematic(compPct, n2MPa, steerDeg);
+    }
+
+    const schemCanvas = document.getElementById('schematic-canvas');
+    const schemCtx = schemCanvas.getContext('2d');
+
+    function drawLiveSchematic(compPct, n2MPa, steerDeg) {
+      const ctx = schemCtx;
+      const w = schemCanvas.width;
+      const h = schemCanvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.save();
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(10, 12);
+      ctx.lineTo(95, 12);
+      ctx.lineTo(126, 29);
+      ctx.quadraticCurveTo(158, 39, 158, 49);
+      ctx.quadraticCurveTo(154, 58, 118, 58);
+      ctx.lineTo(10, 58);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(10, 43);
+      ctx.lineTo(132, 43);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(77, 124, 15, 0.28)';
+      ctx.fillRect(42, 43, 64, 15);
+      ctx.strokeStyle = '#84cc16';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(42, 43, 64, 15);
+
+      const pivX = 50, pivY = 51;
+      const angRad = THREE.MathUtils.degToRad(state.strutAngleDeg);
+      const strutLenPx = 34 - (compPct / 100) * 6;
+      const wx = pivX + Math.sin(angRad) * strutLenPx;
+      const wy = pivY + Math.cos(angRad) * strutLenPx;
+
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 3.0;
+      ctx.beginPath();
+      ctx.moveTo(pivX, pivY);
+      ctx.lineTo(wx, wy);
+      ctx.stroke();
+
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.arc(wx, wy, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#7dd3fc';
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.fillText(state.isUpLocked ? '100% 緊湊收納' : `收起角 ${Math.round(state.strutAngleDeg)}°`, 12, 104);
+      ctx.fillStyle = '#fcd34d';
+      ctx.fillText(`N₂ ${n2MPa.toFixed(1)}MPa`, 94, 104);
+      ctx.restore();
+
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(172, 10);
+      ctx.lineTo(172, h - 10);
+      ctx.stroke();
+
+      const cx = 248, cy = 54, r = 32;
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.55)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, -Math.PI / 2 - THREE.MathUtils.degToRad(75), -Math.PI / 2 + THREE.MathUtils.degToRad(75));
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(THREE.MathUtils.degToRad(steerDeg));
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(-15, -13, 7, 26);
+      ctx.fillRect(8, -13, 7, 26);
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(-8, -2, 16, 4);
+      ctx.beginPath();
+      ctx.moveTo(0, -24);
+      ctx.lineTo(-5, -15);
+      ctx.lineTo(5, -15);
+      ctx.closePath();
+      ctx.fillStyle = '#38bdf8';
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = '#a7f3d0';
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.fillText(`轉向角: ${steerDeg > 0 ? '+' : ''}${steerDeg.toFixed(1)}°`, 204, 104);
+    }
+
+    // ============================================================================
+    // 10. INTERACTIVE SELECTION, HIGHLIGHTING & UI EVENT HANDLERS
+    // ============================================================================
+    function selectComponent(partId, moveCamera = false) {
+      state.selectedPart = partId;
+      const data = COMPONENT_DATA[partId] || COMPONENT_DATA.overview;
+
+      document.getElementById('info-tag').textContent = data.tag;
+      document.getElementById('info-title').textContent = data.title;
+      document.getElementById('info-subtitle').textContent = data.subtitle;
+      document.getElementById('info-desc').textContent = data.desc;
+
+      const specsList = document.getElementById('info-specs');
+      specsList.innerHTML = data.specs.map(([k, v], idx) => `
+        <li class="flex justify-between ${idx < data.specs.length - 1 ? 'border-b border-slate-800/80 pb-1' : ''}">
+          <span class="text-slate-400">${k}：</span>
+          <span class="font-mono-tech text-slate-200 text-right">${v}</span>
+        </li>
+      `).join('');
+
+      document.querySelectorAll('.part-btn').forEach(btn => {
+        const active = btn.getAttribute('data-part') === partId;
+        btn.className = active
+          ? 'part-btn px-2.5 py-1 rounded-full text-[11px] font-semibold bg-sky-500 text-slate-950 transition'
+          : 'part-btn px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition';
+      });
+
+      Object.entries(partMeshes).forEach(([id, meshes]) => {
+        const isSelected = partId !== 'overview' && id === partId;
+        meshes.forEach(m => {
+          if (!m.userData.origMaterial) m.userData.origMaterial = m.material;
+          if (isSelected && !fuselagePrimaryMeshes.includes(m) && !fuselageBellyMeshes.includes(m) && m !== starboardCutawayWindowMesh) {
+            const hlMat = m.userData.origMaterial.clone();
+            if (hlMat.emissive) {
+              hlMat.emissive.setHex(0x0284c7);
+              hlMat.emissiveIntensity = 0.42;
+            }
+            m.material = hlMat;
+          } else {
+            m.material = m.userData.origMaterial;
+          }
+        });
+      });
+
+      applyFuselageSkinMode();
+
+      if (state.xrayMode) {
+        outerBarrelMeshes.forEach(m => { m.material = MATS.strutWhiteXray; });
+      }
+
+      if (moveCamera && data.camPreset) {
+        camCtrl.setPreset(data.camPreset);
+      }
+    }
+
+    function applyFuselageSkinMode() {
+      const btn = document.getElementById('btn-toggle-bay');
+      if (state.fuselageMode === 'cutaway') {
+        wheelBayGroup.visible = true;
+        fuselageSkinGroup.visible = true;
+        fuselagePrimaryMeshes.forEach(m => { m.material = MATS.fuselageSolid; });
+        fuselageBellyMeshes.forEach(m => { m.material = MATS.fuselageBellyGrey; });
+        if (starboardCutawayWindowMesh) starboardCutawayWindowMesh.material = MATS.cutawayWindowPane;
+        btn.textContent = '✈️ 機鼻輪艙 (剖視)';
+        btn.className = 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition';
+      } else if (state.fuselageMode === 'solid') {
+        wheelBayGroup.visible = true;
+        fuselageSkinGroup.visible = true;
+        fuselagePrimaryMeshes.forEach(m => { m.material = MATS.fuselageSolid; });
+        fuselageBellyMeshes.forEach(m => { m.material = MATS.fuselageBellyGrey; });
+        if (starboardCutawayWindowMesh) starboardCutawayWindowMesh.material = MATS.fuselageBellyGrey;
+        btn.textContent = '✈️ 機鼻: 全實體';
+        btn.className = 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-emerald-500/25 text-emerald-300 border border-emerald-400/50 transition';
+      } else if (state.fuselageMode === 'translucent') {
+        wheelBayGroup.visible = true;
+        fuselageSkinGroup.visible = true;
+        fuselagePrimaryMeshes.forEach(m => { m.material = MATS.fuselageGhost; });
+        fuselageBellyMeshes.forEach(m => { m.material = MATS.fuselageGhost; });
+        if (starboardCutawayWindowMesh) starboardCutawayWindowMesh.material = MATS.cutawayWindowPane;
+        btn.textContent = '✈️ 機鼻: 半透明';
+        btn.className = 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-purple-500/20 text-purple-300 border border-purple-400/40 transition';
+      } else {
+        wheelBayGroup.visible = true;
+        fuselageSkinGroup.visible = false;
+        btn.textContent = '✈️ 機鼻: 僅輪艙';
+        btn.className = 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 transition';
+      }
+    }
+
+    // Bind UI Controls
+    document.getElementById('btn-gear-down').addEventListener('click', () => {
+      state.targetRetract = 0;
+      sound.playLockClunk(false);
+      document.getElementById('btn-gear-down').className = 'py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 bg-emerald-600/30 text-emerald-300 border border-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.25)] transition';
+      document.getElementById('btn-gear-up').className = 'py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 bg-slate-800 text-slate-300 border border-slate-700 hover:border-amber-500/50 hover:text-amber-300 transition';
+    });
+
+    document.getElementById('btn-gear-up').addEventListener('click', () => {
+      state.targetRetract = 100;
+      sound.playLockClunk(false);
+      document.getElementById('btn-gear-up').className = 'py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 bg-amber-500/30 text-amber-300 border border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.25)] transition';
+      document.getElementById('btn-gear-down').className = 'py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 bg-slate-800 text-slate-300 border border-slate-700 hover:border-emerald-500/50 hover:text-emerald-300 transition';
+    });
+
+    document.getElementById('slider-retract').addEventListener('input', (e) => {
+      state.targetRetract = null;
+      state.retractProgress = parseFloat(e.target.value);
+    });
+
+    document.getElementById('slider-compression').addEventListener('input', (e) => {
+      state.touchdownAnimTime = -1;
+      state.taxiBumpActive = false;
+      state.compressionPct = parseFloat(e.target.value);
+    });
+
+    document.getElementById('btn-touchdown').addEventListener('click', () => {
+      state.retractProgress = 0;
+      state.targetRetract = null;
+      document.getElementById('slider-retract').value = 0;
+      state.touchdownAnimTime = 0;
+      if (state.groundSpeedKts < 60) {
+        state.groundSpeedKts = 115;
+        document.getElementById('slider-speed').value = 115;
+      }
+      sound.playTouchdownScreech();
+      triggerTouchdownSmoke(runwayGroup.position.y);
+    });
+
+    document.getElementById('btn-taxi-bump').addEventListener('click', (e) => {
+      state.taxiBumpActive = !state.taxiBumpActive;
+      e.currentTarget.className = state.taxiBumpActive
+        ? 'py-1.5 px-2.5 rounded-lg font-semibold text-[11px] bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 transition flex items-center justify-center gap-1'
+        : 'py-1.5 px-2.5 rounded-lg font-semibold text-[11px] bg-slate-800 text-slate-300 border border-slate-700 hover:border-amber-400/40 transition flex items-center justify-center gap-1';
+    });
+
+    document.getElementById('slider-steering').addEventListener('input', (e) => {
+      state.autoSteerSweep = false;
+      state.steeringDeg = parseFloat(e.target.value);
+    });
+
+    document.getElementById('btn-steer-left').addEventListener('click', () => {
+      state.autoSteerSweep = false;
+      state.steeringDeg = -45;
+      document.getElementById('slider-steering').value = -45;
+    });
+    document.getElementById('btn-steer-center').addEventListener('click', () => {
+      state.autoSteerSweep = false;
+      state.steeringDeg = 0;
+      document.getElementById('slider-steering').value = 0;
+    });
+    document.getElementById('btn-steer-right').addEventListener('click', () => {
+      state.autoSteerSweep = false;
+      state.steeringDeg = 45;
+      document.getElementById('slider-steering').value = 45;
+    });
+    document.getElementById('btn-steer-sweep').addEventListener('click', (e) => {
+      state.autoSteerSweep = !state.autoSteerSweep;
+      e.currentTarget.className = state.autoSteerSweep
+        ? 'px-2.5 py-1 rounded bg-emerald-500 text-slate-950 font-semibold text-[11px]'
+        : 'px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 text-[11px] font-medium';
+    });
+
+    document.getElementById('slider-speed').addEventListener('input', (e) => {
+      state.groundSpeedKts = parseFloat(e.target.value);
+    });
+
+    document.getElementById('slider-explode').addEventListener('input', (e) => {
+      state.explodePct = parseFloat(e.target.value);
+    });
+
+    document.getElementById('btn-toggle-xray').addEventListener('click', (e) => {
+      state.xrayMode = !state.xrayMode;
+      internalCutawayGroup.visible = state.xrayMode;
+      outerBarrelMeshes.forEach(m => {
+        m.material = state.xrayMode ? MATS.strutWhiteXray : MATS.strutWhite;
+      });
+      e.currentTarget.className = state.xrayMode
+        ? 'px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500/25 text-amber-300 border border-amber-400/50 transition flex items-center gap-1'
+        : 'px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 text-slate-300 border border-slate-700 hover:border-sky-400/40 transition flex items-center gap-1';
+      if (state.xrayMode) selectComponent('oleo', true);
+    });
+
+    document.getElementById('btn-toggle-labels').addEventListener('click', (e) => {
+      state.showLabels = !state.showLabels;
+      labelsContainer.style.display = state.showLabels ? 'block' : 'none';
+      e.currentTarget.className = state.showLabels
+        ? 'px-2.5 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 hover:bg-sky-500/30 transition flex items-center gap-1'
+        : 'px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 text-slate-300 border border-slate-700 transition flex items-center gap-1';
+    });
+
+    document.getElementById('btn-toggle-sound').addEventListener('click', () => {
+      sound.enabled = !sound.enabled;
+      document.getElementById('sound-icon').textContent = sound.enabled ? '🔊' : '🔇';
+    });
+
+    document.getElementById('btn-toggle-lights').addEventListener('click', (e) => {
+      state.lightsOn = !state.lightsOn;
+      e.currentTarget.textContent = state.lightsOn ? '💡 滑行燈: 開' : '💡 滑行燈: 關';
+      e.currentTarget.className = state.lightsOn
+        ? 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition'
+        : 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 transition';
+    });
+
+    document.getElementById('btn-toggle-forces').addEventListener('click', (e) => {
+      state.showForces = !state.showForces;
+      e.currentTarget.className = state.showForces
+        ? 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-amber-500/25 text-amber-300 border border-amber-400/50 transition'
+        : 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 transition';
+    });
+
+    document.getElementById('btn-toggle-bay').addEventListener('click', () => {
+      const order = ['cutaway', 'solid', 'translucent', 'hidden'];
+      const nextIdx = (order.indexOf(state.fuselageMode) + 1) % order.length;
+      state.fuselageMode = order[nextIdx];
+      applyFuselageSkinMode();
+    });
+
+    document.getElementById('btn-reset-all').addEventListener('click', () => {
+      state.targetRetract = null;
+      state.retractProgress = 0;
+      state.compressionPct = 20;
+      state.steeringDeg = 0;
+      state.groundSpeedKts = 25;
+      state.explodePct = 0;
+      state.autoSteerSweep = false;
+      state.taxiBumpActive = false;
+      state.touchdownAnimTime = -1;
+      state.fuselageMode = 'cutaway';
+      applyFuselageSkinMode();
+      document.getElementById('slider-retract').value = 0;
+      document.getElementById('slider-compression').value = 20;
+      document.getElementById('slider-steering').value = 0;
+      document.getElementById('slider-speed').value = 25;
+      document.getElementById('slider-explode').value = 0;
+      selectComponent('overview', true);
+    });
+
+    document.getElementById('btn-mobile-controls').addEventListener('click', () => {
+      const lp = document.getElementById('left-panel');
+      lp.classList.toggle('hidden');
+    });
+
+    document.querySelectorAll('.cam-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        camCtrl.setPreset(btn.getAttribute('data-cam'));
+      });
+    });
+
+    document.querySelectorAll('.part-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectComponent(btn.getAttribute('data-part'), true);
+      });
+    });
+
+    // ============================================================================
+    // 11. 3D VIEWPORT POINTER / TOUCH ORBIT CONTROLS & RAYCAST PART PICKING
+    // ============================================================================
+    const raycaster = new THREE.Raycaster();
+    const mouseNDC = new THREE.Vector2();
+
+    container.addEventListener('contextmenu', e => e.preventDefault());
+
+    container.addEventListener('pointerdown', (e) => {
+      sound.init();
+      camCtrl.isDragging = true;
+      camCtrl.isPanning = (e.button === 2 || e.shiftKey);
+      camCtrl.prevMouse.x = e.clientX;
+      camCtrl.prevMouse.y = e.clientY;
+      camCtrl.downMouse.x = e.clientX;
+      camCtrl.downMouse.y = e.clientY;
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (!camCtrl.isDragging) return;
+      const dx = e.clientX - camCtrl.prevMouse.x;
+      const dy = e.clientY - camCtrl.prevMouse.y;
+      camCtrl.prevMouse.x = e.clientX;
+      camCtrl.prevMouse.y = e.clientY;
+
+      if (camCtrl.isPanning) {
+        const panScale = camCtrl.spherical.radius * 0.0014;
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+        camCtrl.targetPanOffset.addScaledVector(right, -dx * panScale);
+        camCtrl.targetPanOffset.addScaledVector(up, dy * panScale);
+      } else {
+        camCtrl.targetSpherical.theta -= dx * 0.0065;
+        camCtrl.targetSpherical.phi = Math.max(0.18, Math.min(Math.PI - 0.18, camCtrl.targetSpherical.phi - dy * 0.0065));
+      }
+    });
+
+    window.addEventListener('pointerup', (e) => {
+      if (!camCtrl.isDragging) return;
+      camCtrl.isDragging = false;
+      const moveDist = Math.hypot(e.clientX - camCtrl.downMouse.x, e.clientY - camCtrl.downMouse.y);
+      if (moveDist < 5 && e.button === 0) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouseNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouseNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouseNDC, camera);
+        const allPickable = Object.values(partMeshes).flat().filter(
+          m => !fuselagePrimaryMeshes.includes(m) && !fuselageBellyMeshes.includes(m) && m !== starboardCutawayWindowMesh
+        );
+        const hits = raycaster.intersectObjects(allPickable, false);
+        if (hits.length > 0) {
+          const hitPart = hits[0].object.userData.partId;
+          if (hitPart) selectComponent(hitPart, false);
+        }
+      }
+    });
+
+    container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      camCtrl.targetSpherical.radius = Math.max(2.5, Math.min(26.0, camCtrl.targetSpherical.radius + e.deltaY * 0.006));
+    }, { passive: false });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ============================================================================
+    // 12. MAIN ANIMATION LOOP & 3D CALLOUT PROJECTION
+    // ============================================================================
+    let prevTime = performance.now();
+
+    function updateCalloutPositions() {
+      if (!state.showLabels) return;
+      const halfW = window.innerWidth * 0.5;
+      const halfH = window.innerHeight * 0.5;
+
+      Object.entries(calloutElements).forEach(([id, item]) => {
+        const worldPos = item.def.anchor.clone();
+        const proj = worldPos.project(camera);
+        if (proj.z > 1.0) {
+          item.el.style.opacity = '0';
+          item.el.style.pointerEvents = 'none';
+          return;
+        }
+        const sx = (proj.x * halfW) + halfW;
+        const sy = -(proj.y * halfH) + halfH;
+        item.el.style.left = `${sx}px`;
+        item.el.style.top = `${sy}px`;
+        item.el.style.opacity = state.selectedPart === id || state.selectedPart === 'overview' ? '0.96' : '0.62';
+        item.el.style.pointerEvents = 'auto';
+      });
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.05, (now - prevTime) / 1000);
+      prevTime = now;
+
+      updateKinematicsAndPhysics(dt);
+      camCtrl.update();
+      renderer.render(scene, camera);
+      updateCalloutPositions();
+    }
+
+    window.onload = () => {
+      applyFuselageSkinMode();
+      selectComponent('overview', false);
+      requestAnimationFrame(animate);
+    };
+  </script>
+</body>
+</html>
